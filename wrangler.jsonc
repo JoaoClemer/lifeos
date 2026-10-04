@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "financas",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-09-30",
+  "assets": {
+    "not_found_handling": "single-page-application",
+    // API, MCP e /.well-known sempre passam pelo Worker (nunca caem no index.html do SPA)
+    "run_worker_first": ["/api/*", "/mcp", "/mcp/*", "/.well-known/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "financas",
+      "database_id": "0f443796-7aca-4467-abf6-3cf09ce9278f",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "vars": {
+    "TIMEZONE": "America/Sao_Paulo"
+  },
+  "observability": { "enabled": true }
+}
