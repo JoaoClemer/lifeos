@@ -90,7 +90,10 @@ export function Sheet({ title, onClose, children, footer }: { title: string; onC
             <X size={20} />
           </button>
         </div>
-        <div className="overflow-y-auto px-5 pb-4">{children}</div>
+        <div className="overflow-y-auto px-5">
+          {/* padding no filho (não no container de rolagem) para o rodapé fixo colar no fundo */}
+          <div className="pb-4">{children}</div>
+        </div>
         {footer && (
           <div className="border-t border-border px-5 pt-3" style={{ paddingBottom: "max(env(safe-area-inset-bottom), 12px)" }}>
             {footer}
@@ -363,7 +366,7 @@ export function Row({
 }) {
   const inner = (
     <>
-      {left && <div className="pointer-events-auto relative shrink-0">{left}</div>}
+      {left && <div className="pointer-events-auto relative flex shrink-0">{left}</div>}
       <div className="min-w-0 flex-1">
         <div className="truncate text-[15px] font-medium">{title}</div>
         {subtitle && <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-muted">{subtitle}</div>}
