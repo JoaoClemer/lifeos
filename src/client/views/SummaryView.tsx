@@ -1,7 +1,7 @@
-import { AlertTriangle, ArrowDownLeft, ChevronRight, Plus, Target, Wallet } from "lucide-react";
+import { AlertTriangle, ArrowDownLeft, ChevronRight, Pencil, Plus, Target, Wallet } from "lucide-react";
 import { formatBRL } from "../../shared/money";
-import { formatDateBR, monthLabel } from "../../shared/month";
-import type { Goal, Income, Summary } from "../../shared/types";
+import { addMonths, formatDateBR, monthLabel } from "../../shared/month";
+import type { Goal, Income, MonthBalance, Summary } from "../../shared/types";
 import { api } from "../api";
 import { useApp, useData, useMutation } from "../state";
 import { AccountIcon, Button, Card, CheckCircle, cx, Empty, List, Money, Progress, Row, Section } from "../ui";
@@ -47,7 +47,7 @@ export function SummaryView() {
                 )}
               </span>
               <span className={cx("font-semibold", t.leftover_cents! < 0 ? "text-danger" : "text-success")}>
-                {t.leftover_cents! < 0 ? "Falta " : "Sobra "}
+                {t.leftover_cents! < 0 ? "Falta no mês " : "Sobra do mês "}
                 <Money cents={Math.abs(t.leftover_cents!)} />
               </span>
             </div>
@@ -59,6 +59,14 @@ export function SummaryView() {
           </p>
         )}
       </Card>
+
+      {summary.balance && (t.income_cents != null || summary.balance.opening_source === "manual") && (
+        <BalanceCard
+          month={month}
+          balance={summary.balance}
+          onAdjust={() => openSheet({ kind: "balance", month, balance: summary.balance! })}
+        />
+      )}
 
       {nothing && (
         <Empty
@@ -271,6 +279,53 @@ function Composition({
         ))}
       </div>
     </div>
+  );
+}
+
+/** Saldo inicial (do mês anterior ou ajustado) + sobra do mês = saldo final previsto. */
+function BalanceCard({ month, balance, onAdjust }: { month: string; balance: MonthBalance; onAdjust: () => void }) {
+  const prev = monthLabel(addMonths(month, -1)).split(" de ")[0];
+  const origin =
+    balance.opening_source === "manual"
+      ? balance.note
+        ? `ajustado: ${balance.note}`
+        : "ajustado por você"
+      : balance.opening_source === "carried"
+        ? `saldo final de ${prev}`
+        : "início do saldo acumulado";
+  const signed = (cents: number) => (cents < 0 ? `−${formatBRL(-cents)}` : formatBRL(cents));
+  return (
+    <Section
+      title="Saldo"
+      action={
+        <Button variant="ghost" className="h-8 px-2 text-sm" onClick={onAdjust}>
+          <Pencil size={15} /> Ajustar
+        </Button>
+      }
+    >
+      <Card className="p-4">
+        <div className="flex items-baseline justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[15px]">Saldo inicial</p>
+            <p className="truncate text-[13px] text-muted">{origin}</p>
+          </div>
+          <span className={cx("num font-semibold", balance.opening_cents < 0 && "text-danger")}>{signed(balance.opening_cents)}</span>
+        </div>
+        <div className="mt-2.5 flex items-baseline justify-between gap-3">
+          <div>
+            <p className="text-[15px]">{balance.leftover_cents < 0 ? "Falta no mês" : "Sobra do mês"}</p>
+            <p className="text-[13px] text-muted">renda − gastos − aportes</p>
+          </div>
+          <span className={cx("num font-semibold", balance.leftover_cents < 0 ? "text-danger" : "text-success")}>
+            {balance.leftover_cents < 0 ? signed(balance.leftover_cents) : `+${formatBRL(balance.leftover_cents)}`}
+          </span>
+        </div>
+        <div className="mt-3 flex items-baseline justify-between gap-3 border-t border-border pt-3">
+          <p className="font-semibold">Saldo final previsto</p>
+          <span className={cx("num text-xl font-bold", balance.closing_cents < 0 ? "text-danger" : "text-success")}>{signed(balance.closing_cents)}</span>
+        </div>
+      </Card>
+    </Section>
   );
 }
 

@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { MONTH_RE } from "../shared/month";
 import { makeCtx, UserError } from "./lib";
 import * as accounts from "./services/accounts";
+import * as balance from "./services/balance";
 import * as expenses from "./services/expenses";
 import * as goals from "./services/goals";
 import * as incomes from "./services/incomes";
@@ -116,6 +117,16 @@ api.delete("/receivables/:id", async (c) => {
   const id = idParam(c.req.param("id"));
   // ?group=1 exclui todas as parcelas pendentes do parcelamento
   return c.json(c.req.query("group") === "1" ? await receivables.deleteReceivableGroup(ctxOf(c), id) : await receivables.deleteReceivable(ctxOf(c), id));
+});
+
+// ---- Saldo acumulado: ajuste manual do saldo inicial de um mês ----
+api.put("/balances/:month", async (c) => {
+  const ctx = ctxOf(c);
+  return c.json(await balance.setOpeningBalance(ctx, monthQuery(c.req.param("month"), ctx.month), await c.req.json()));
+});
+api.delete("/balances/:month", async (c) => {
+  const ctx = ctxOf(c);
+  return c.json(await balance.clearOpeningBalance(ctx, monthQuery(c.req.param("month"), ctx.month)));
 });
 
 // ---- Entradas extras (13º, bônus...) ----

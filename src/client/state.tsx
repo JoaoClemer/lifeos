@@ -1,6 +1,6 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { todayIn } from "../shared/month";
-import type { Account, Expense, Goal, Income, Installment, Receivable, Recurring } from "../shared/types";
+import type { Account, Expense, Goal, Income, Installment, MonthBalance, Receivable, Recurring } from "../shared/types";
 import { api } from "./api";
 
 export type NewTab = "expense" | "installment" | "recurring" | "receivable" | "income";
@@ -12,6 +12,7 @@ export type SheetState =
   | { kind: "recurring"; item: Recurring }
   | { kind: "receivable"; item: Receivable }
   | { kind: "income"; item: Income }
+  | { kind: "balance"; month: string; balance: MonthBalance }
   | { kind: "goal"; item?: Goal }
   | { kind: "goal-detail"; id: number }
   | { kind: "account"; item?: Account };

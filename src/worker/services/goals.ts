@@ -25,14 +25,16 @@ export const GoalEntryInput = z.object({
   note: z.string().nullable().optional(),
 });
 
-type Row = Omit<Goal, "month_planned_cents" | "eta_month" | "required_monthly_cents">;
+export type GoalRow = Omit<Goal, "month_planned_cents" | "eta_month" | "required_monthly_cents">;
+type Row = GoalRow;
 
 const SELECT = `SELECT g.id, g.name, g.institution, g.target_cents, g.monthly_cents, g.deadline, g.start_month, g.color, g.archived,
   COALESCE((SELECT SUM(amount_cents) FROM goal_entries WHERE goal_id = g.id), 0) AS balance_cents,
   COALESCE((SELECT SUM(amount_cents) FROM goal_entries WHERE goal_id = g.id AND month = ?1 AND kind IN ('contribution', 'withdrawal')), 0) AS month_contrib_cents
   FROM goals g`;
 
-function decorate(g: Row, month: string): Goal {
+/** Calcula aporte planejado, previsão e aporte necessário de uma meta no mês (usado também pelo saldo acumulado). */
+export function decorateGoal(g: Row, month: string): Goal {
   const remaining = g.target_cents ? Math.max(g.target_cents - g.balance_cents, 0) : null;
   // Saldo no início do mês (desconsiderando os aportes deste mês) para saber se ainda havia aporte a fazer
   const remainingAtStart = remaining === null ? null : remaining + g.month_contrib_cents;
@@ -55,13 +57,13 @@ function decorate(g: Row, month: string): Goal {
 
 export async function listGoals(ctx: Ctx, month: string, includeArchived = false): Promise<Goal[]> {
   const sql = `${SELECT} ${includeArchived ? "" : "WHERE g.archived = 0"} ORDER BY g.archived, g.id`;
-  return (await ctx.db.prepare(sql).bind(month).all<Row>()).results.map((g) => decorate(g, month));
+  return (await ctx.db.prepare(sql).bind(month).all<Row>()).results.map((g) => decorateGoal(g, month));
 }
 
 export async function getGoal(ctx: Ctx, id: number, month = ctx.month): Promise<Goal> {
   const row = await ctx.db.prepare(`${SELECT} WHERE g.id = ?2`).bind(month, id).first<Row>();
   if (!row) throw new UserError(`Meta ${id} não encontrada`, 404);
-  return decorate(row, month);
+  return decorateGoal(row, month);
 }
 
 export async function createGoal(ctx: Ctx, input: z.input<typeof GoalInput>): Promise<Goal> {

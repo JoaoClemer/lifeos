@@ -1,9 +1,10 @@
 import { z } from "zod";
 import { formatBRL as brl, toCents } from "../../shared/money";
-import { DATE_RE, formatDateBR, monthLabel, MONTH_RE } from "../../shared/month";
-import type { Account, Receivable, Recurring } from "../../shared/types";
+import { addMonths, DATE_RE, formatDateBR, MONTH_RE, monthLabel } from "../../shared/month";
+import type { Account, MonthBalance, Receivable, Recurring } from "../../shared/types";
 import { type Ctx, UserError } from "../lib";
 import * as accounts from "../services/accounts";
+import * as balance from "../services/balance";
 import * as expenses from "../services/expenses";
 import * as goals from "../services/goals";
 import * as incomes from "../services/incomes";
@@ -35,6 +36,16 @@ function budgetLine(b: Recurring): string {
   return `${b.description}: gasto ${brl(b.spent_cents)} de ${brl(b.month_amount_cents)} — ${
     rest >= 0 ? `restam ${brl(rest)}` : `estourou ${brl(-rest)}`
   }`;
+}
+
+function balanceLine(b: MonthBalance, month: string): string {
+  const origin =
+    b.opening_source === "manual"
+      ? `ajustado manualmente${b.note ? `: ${b.note}` : ""}`
+      : b.opening_source === "carried"
+        ? `vindo de ${monthLabel(addMonths(month, -1))}`
+        : "início do saldo acumulado";
+  return `Saldo inicial: ${brl(b.opening_cents)} (${origin}) → saldo final previsto: ${brl(b.closing_cents)}`;
 }
 
 /** " (parcela 3/10, nov/26)" para devedores parcelados; vazio para à vista. */
@@ -83,6 +94,7 @@ export const TOOLS: Tool<z.ZodObject>[] = [
           : "";
         lines.push(`Renda: ${brl(t.income_cents)}${breakdown} → sobra prevista: ${brl(t.leftover_cents!)}`);
       }
+      if (s.balance) lines.push(balanceLine(s.balance, m));
       if (s.by_account.length) {
         lines.push("", "Por cartão/conta (o que cai em cada um, incluindo a parte de devedores):");
         for (const a of s.by_account) lines.push(`• ${a.name}${a.due_day ? ` (vence dia ${a.due_day})` : ""}: ${brl(a.total_cents)}`);
@@ -400,6 +412,37 @@ export const TOOLS: Tool<z.ZodObject>[] = [
         );
       }
       return out.join("\n");
+    },
+  }),
+
+  tool({
+    name: "ajustar_saldo",
+    title: "Ajustar saldo acumulado",
+    description:
+      "A sobra de cada mês (renda - gastos - aportes) vira automaticamente o saldo inicial do mês seguinte. " +
+      "Use esta ferramenta para corrigir com o valor real (ex.: conferiu o banco). " +
+      "'Terminei outubro com 480' → valor 480, mes 2026-10, momento 'fim'. 'Comecei novembro com 480' → momento 'inicio'. " +
+      "O valor pode ser negativo. Com automatico=true, remove o ajuste e volta ao cálculo automático.",
+    schema: z.object({
+      valor: z.number().optional().describe("Saldo real em reais (pode ser negativo)"),
+      mes: monthArg.optional(),
+      momento: z.enum(["inicio", "fim"]).optional().describe("Se o valor é o saldo no início ou no fim do mês. Padrão: inicio"),
+      observacao: z.string().optional(),
+      automatico: z.boolean().optional().describe("Remove o ajuste manual do mês"),
+    }),
+    async run(a, ctx) {
+      const base = a.mes ?? ctx.month;
+      // Saldo do fim de um mês = saldo inicial do mês seguinte
+      const target = a.momento === "fim" ? addMonths(base, 1) : base;
+      if (a.automatico) {
+        const b = await balance.clearOpeningBalance(ctx, target);
+        return b
+          ? `✅ Ajuste removido. ${monthLabel(target)}: ${balanceLine(b, target)}.`
+          : `✅ Ajuste removido. ${monthLabel(target)} é anterior ao início do saldo acumulado.`;
+      }
+      if (a.valor === undefined) throw new UserError("Informe o valor do saldo (ou automatico=true para remover o ajuste)");
+      const b = await balance.setOpeningBalance(ctx, target, { opening_cents: toCents(a.valor), note: a.observacao ?? null });
+      return `✅ Saldo ajustado. ${monthLabel(target)}: ${balanceLine(b!, target)}. Os meses seguintes continuam a partir daqui.`;
     },
   }),
 

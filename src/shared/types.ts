@@ -146,6 +146,21 @@ export interface BudgetStatus {
   remaining_cents: number;
 }
 
+/** Saldo acumulado do mês: inicial (do mês anterior ou ajustado) + sobra = final. */
+export interface MonthBalance {
+  /** Mês em que o acúmulo começa. */
+  start_month: string;
+  opening_cents: number;
+  /** start = 1º mês do acúmulo (0); carried = veio do mês anterior; manual = ajustado por você. */
+  opening_source: "start" | "carried" | "manual";
+  /** Saldo inicial que valeria sem o ajuste manual. */
+  automatic_opening_cents: number;
+  note: string | null;
+  /** Sobra do mês (renda - gastos - aportes), com renda 0 se não configurada. */
+  leftover_cents: number;
+  closing_cents: number;
+}
+
 export interface Summary {
   month: string;
   today: string;
@@ -173,4 +188,6 @@ export interface Summary {
   by_account: AccountTotal[];
   budgets: BudgetStatus[];
   pending_by_person: { person: string; total_cents: number; count: number }[];
+  /** Saldo acumulado (null antes do mês em que o acúmulo começa). */
+  balance: MonthBalance | null;
 }

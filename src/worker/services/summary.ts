@@ -5,6 +5,7 @@ import { listAccounts } from "./accounts";
 import { listExpenses } from "./expenses";
 import { listGoals } from "./goals";
 import { listInstallments } from "./installments";
+import { getMonthBalance } from "./balance";
 import { listIncomes } from "./incomes";
 import { isDue, listPeople, listReceivables } from "./receivables";
 import { listRecurring } from "./recurring";
@@ -40,7 +41,7 @@ export async function updateSettings(ctx: Ctx, patch: z.input<typeof SettingsPat
  * - por conta = o que efetivamente cai em cada cartão/conta (inclui a parte dos devedores passada no cartão)
  */
 export async function getSummary(ctx: Ctx, month: string): Promise<Summary> {
-  const [accounts, installments, recurring, expenses, receivablesMonth, allPending, goals, settings, peopleNames, incomes] = await Promise.all([
+  const [accounts, installments, recurring, expenses, receivablesMonth, allPending, goals, settings, peopleNames, incomes, balance] = await Promise.all([
     listAccounts(ctx, true),
     listInstallments(ctx, month),
     listRecurring(ctx, month),
@@ -51,6 +52,7 @@ export async function getSummary(ctx: Ctx, month: string): Promise<Summary> {
     getSettings(ctx),
     listPeople(ctx),
     listIncomes(ctx, month),
+    getMonthBalance(ctx, month),
   ]);
 
   // Parcelas de devedores parcelados só contam como pendentes a partir do mês delas
@@ -147,16 +149,17 @@ export async function getSummary(ctx: Ctx, month: string): Promise<Summary> {
     by_account,
     budgets,
     pending_by_person: [...people.values()].sort((a, b) => b.total_cents - a.total_cents),
+    balance,
   };
 }
 
 /** Backup completo em JSON. */
 export async function exportAll(ctx: Ctx) {
-  const tables = ["accounts", "recurring", "recurring_months", "installments", "expenses", "receivables", "incomes", "goals", "goal_entries", "settings"];
+  const tables = ["accounts", "recurring", "recurring_months", "installments", "expenses", "receivables", "incomes", "month_balances", "goals", "goal_entries", "settings"];
   const results = await ctx.db.batch(tables.map((t) => ctx.db.prepare(`SELECT * FROM ${t}`)));
   return {
     exported_at: new Date().toISOString(),
-    version: 2,
+    version: 3,
     tables: Object.fromEntries(tables.map((t, i) => [t, results[i].results])),
   };
 }

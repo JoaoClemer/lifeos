@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { AccountForm } from "./forms/AccountForm";
+import { BalanceForm } from "./forms/BalanceForm";
 import { ExpenseForm } from "./forms/ExpenseForm";
 import { GoalDetail, GoalForm } from "./forms/GoalForms";
 import { IncomeForm } from "./forms/IncomeForm";
@@ -7,6 +8,7 @@ import { InstallmentForm } from "./forms/InstallmentForm";
 import { ReceivableForm } from "./forms/ReceivableForm";
 import { RecurringForm } from "./forms/RecurringForm";
 import { type NewTab, useApp, useData } from "./state";
+import { monthTitle } from "../shared/month";
 import type { Goal } from "../shared/types";
 import { Segmented, Sheet } from "./ui";
 
@@ -71,6 +73,12 @@ export function SheetHost() {
       return (
         <Sheet title="Editar entrada" onClose={closeSheet}>
           <IncomeForm item={sheet.item} onDone={done} />
+        </Sheet>
+      );
+    case "balance":
+      return (
+        <Sheet title={`Saldo inicial de ${monthTitle(sheet.month)}`} onClose={closeSheet}>
+          <BalanceForm month={sheet.month} balance={sheet.balance} onDone={done} />
         </Sheet>
       );
     case "goal":
