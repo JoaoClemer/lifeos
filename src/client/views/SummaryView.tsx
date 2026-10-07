@@ -1,7 +1,7 @@
-import { AlertTriangle, ChevronRight, Plus, Target, Wallet } from "lucide-react";
+import { AlertTriangle, ArrowDownLeft, ChevronRight, Plus, Target, Wallet } from "lucide-react";
 import { formatBRL } from "../../shared/money";
-import { monthLabel } from "../../shared/month";
-import type { Goal, Summary } from "../../shared/types";
+import { formatDateBR, monthLabel } from "../../shared/month";
+import type { Goal, Income, Summary } from "../../shared/types";
 import { api } from "../api";
 import { useApp, useData, useMutation } from "../state";
 import { AccountIcon, Button, Card, CheckCircle, cx, Empty, List, Money, Progress, Row, Section } from "../ui";
@@ -10,6 +10,7 @@ export function SummaryView() {
   const { month, navigate, openSheet } = useApp();
   const summary = useData<Summary>(`/api/summary?month=${month}`).data;
   const goals = useData<Goal[]>(`/api/goals?month=${month}`).data ?? [];
+  const incomes = useData<Income[]>(`/api/incomes?month=${month}`).data ?? [];
   const { run } = useMutation();
 
   if (!summary) return <Skeleton />;
@@ -38,6 +39,12 @@ export function SummaryView() {
             <div className="flex justify-between text-sm">
               <span className="text-muted">
                 Renda <Money cents={t.income_cents} />
+                {t.income_extra_cents > 0 && (
+                  <span className="text-success">
+                    {" "}
+                    (+<Money cents={t.income_extra_cents} /> extra)
+                  </span>
+                )}
               </span>
               <span className={cx("font-semibold", t.leftover_cents! < 0 ? "text-danger" : "text-success")}>
                 {t.leftover_cents! < 0 ? "Falta " : "Sobra "}
@@ -123,7 +130,40 @@ export function SummaryView() {
         </Section>
       )}
 
-      {t.receivable_pending_cents > 0 && (
+      {incomes.length > 0 && (
+        <Section
+          title="Entradas do mês"
+          action={
+            <Button variant="ghost" className="h-8 px-2 text-sm" onClick={() => openSheet({ kind: "new", tab: "income" })}>
+              <Plus size={16} /> Entrada
+            </Button>
+          }
+        >
+          <List>
+            {t.income_base_cents != null && (
+              <Row
+                left={<IncomeIcon />}
+                title="Salário (fixo)"
+                subtitle="Definido em Ajustes"
+                right={<Money cents={t.income_base_cents} className="font-semibold" />}
+                onClick={() => navigate("settings")}
+              />
+            )}
+            {incomes.map((i) => (
+              <Row
+                key={i.id}
+                left={<IncomeIcon />}
+                title={i.description}
+                subtitle={formatDateBR(i.date)}
+                right={<Money cents={i.amount_cents} className="font-semibold text-success" />}
+                onClick={() => openSheet({ kind: "income", item: i })}
+              />
+            ))}
+          </List>
+        </Section>
+      )}
+
+      {(t.receivable_pending_cents > 0 || t.receivable_future_cents > 0) && (
         <Section title="A receber" action={<Money cents={t.receivable_pending_cents} className="text-sm font-semibold text-success" />}>
           <List>
             {summary.pending_by_person.map((p) => (
@@ -142,6 +182,9 @@ export function SummaryView() {
               />
             ))}
           </List>
+          {t.receivable_future_cents > 0 && (
+            <p className="px-1 text-xs text-muted">+ {formatBRL(t.receivable_future_cents)} em parcelas futuras de devedores parcelados.</p>
+          )}
         </Section>
       )}
 
@@ -228,6 +271,14 @@ function Composition({
         ))}
       </div>
     </div>
+  );
+}
+
+function IncomeIcon() {
+  return (
+    <span className="rounded-xl bg-success-soft p-2 text-success">
+      <ArrowDownLeft size={18} />
+    </span>
   );
 }
 

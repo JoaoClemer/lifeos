@@ -12,6 +12,8 @@ const INSTRUCTIONS = `Sistema de finanças pessoais do usuário (valores em reai
 - "Lança 50 no Nubank" → lancar_despesa. Compras parceladas → lancar_parcelado. Assinaturas/contas mensais → adicionar_fixo.
 - Gastos de almoço, transporte etc. que o usuário desconta de um valor reservado → lancar_despesa com o parâmetro orcamento.
 - Dividiu a conta com alguém → lancar_despesa com dividir_com (a parte dos outros vira devedor).
+- Passou no cartão uma compra parcelada para outra pessoa → registrar_devedor com parcelas.
+- Recebeu dinheiro além do salário (13º, bônus, PLR, freela) → registrar_entrada.
 - Confirme com o usuário antes de remover lançamentos.`;
 
 type JsonRpcId = string | number | null;

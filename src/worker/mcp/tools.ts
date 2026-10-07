@@ -1,11 +1,12 @@
 import { z } from "zod";
 import { formatBRL as brl, toCents } from "../../shared/money";
 import { DATE_RE, formatDateBR, monthLabel, MONTH_RE } from "../../shared/month";
-import type { Account, Recurring } from "../../shared/types";
+import type { Account, Receivable, Recurring } from "../../shared/types";
 import { type Ctx, UserError } from "../lib";
 import * as accounts from "../services/accounts";
 import * as expenses from "../services/expenses";
 import * as goals from "../services/goals";
+import * as incomes from "../services/incomes";
 import * as installments from "../services/installments";
 import * as receivables from "../services/receivables";
 import * as recurring from "../services/recurring";
@@ -34,6 +35,11 @@ function budgetLine(b: Recurring): string {
   return `${b.description}: gasto ${brl(b.spent_cents)} de ${brl(b.month_amount_cents)} — ${
     rest >= 0 ? `restam ${brl(rest)}` : `estourou ${brl(-rest)}`
   }`;
+}
+
+/** " (parcela 3/10, nov/26)" para devedores parcelados; vazio para à vista. */
+function parcelLabel(r: Receivable): string {
+  return r.installment_no ? ` (parcela ${r.installment_no}/${r.installment_total}, ${monthLabel(r.month, true)})` : "";
 }
 
 async function accountNames(ctx: Ctx): Promise<Map<number, string>> {
@@ -71,7 +77,12 @@ export const TOOLS: Tool<z.ZodObject>[] = [
         `• Fixos (inclui orçamentos): ${brl(t.recurring_cents)}${t.budget_overflow_cents ? ` — orçamentos estourados em ${brl(t.budget_overflow_cents)}` : ""}`,
         `• Avulsos: ${brl(t.one_off_cents)}`,
       ];
-      if (t.income_cents != null) lines.push(`Renda: ${brl(t.income_cents)} → sobra prevista: ${brl(t.leftover_cents!)}`);
+      if (t.income_cents != null) {
+        const breakdown = t.income_extra_cents
+          ? ` (salário ${brl(t.income_base_cents ?? 0)} + entradas extras ${brl(t.income_extra_cents)})`
+          : "";
+        lines.push(`Renda: ${brl(t.income_cents)}${breakdown} → sobra prevista: ${brl(t.leftover_cents!)}`);
+      }
       if (s.by_account.length) {
         lines.push("", "Por cartão/conta (o que cai em cada um, incluindo a parte de devedores):");
         for (const a of s.by_account) lines.push(`• ${a.name}${a.due_day ? ` (vence dia ${a.due_day})` : ""}: ${brl(a.total_cents)}`);
@@ -87,6 +98,7 @@ export const TOOLS: Tool<z.ZodObject>[] = [
       }
       lines.push("", `A receber (pendente, todos os meses): ${brl(t.receivable_pending_cents)}`);
       for (const p of s.pending_by_person) lines.push(`• ${p.person}: ${brl(p.total_cents)} (${p.count} itens)`);
+      if (t.receivable_future_cents) lines.push(`Parcelas futuras de devedores parcelados (ainda não venceram): ${brl(t.receivable_future_cents)}`);
       if (t.goals_planned_cents || t.goals_done_cents)
         lines.push("", `Aportes em metas no mês: ${brl(t.goals_done_cents)} feitos de ${brl(t.goals_planned_cents)} planejados`);
       return lines.join("\n");
@@ -289,46 +301,73 @@ export const TOOLS: Tool<z.ZodObject>[] = [
     title: "Registrar devedor",
     description:
       "Registra que alguém te deve (ex.: você passou algo no seu cartão para a pessoa). " +
-      "Se foi no cartão, informe `conta` para o valor entrar na fatura. Para dividir um gasto seu, prefira lancar_despesa com dividir_com.",
+      "Se foi no cartão, informe `conta` para o valor entrar na fatura. Para dividir um gasto seu, prefira lancar_despesa com dividir_com. " +
+      "Se a compra da pessoa foi parcelada no seu cartão, informe `parcelas` (e `valor` da parcela ou `valor_total`): cada parcela entra na fatura do seu mês.",
     schema: z.object({
       pessoa: z.string().min(1),
       descricao: z.string().min(1),
-      valor: amountArg("Valor que a pessoa te deve, em reais"),
+      valor: z.number().positive().optional().describe("Valor que a pessoa te deve, em reais (se parcelado: valor de cada parcela)"),
+      valor_total: z.number().positive().optional().describe("Só para parcelado: valor total da compra, em reais"),
+      parcelas: z.number().int().min(1).max(120).optional().describe("Número de parcelas, se foi parcelado no cartão"),
+      parcela_atual: z.number().int().min(1).optional().describe("Para parcelamento já em andamento: qual parcela cai no mês atual"),
       conta: z.string().optional().describe("Cartão/conta em que foi cobrado (se aplicável)"),
       data: dateArg.optional(),
     }),
     async run(a, ctx) {
+      if (!a.valor && !a.valor_total) throw new UserError("Informe valor ou valor_total");
       const account = await accountFromName(ctx, a.conta, false);
-      const r = await receivables.createReceivable(ctx, {
+      const rows = await receivables.createReceivable(ctx, {
         person: a.pessoa,
         description: a.descricao,
-        amount_cents: toCents(a.valor),
+        amount_cents: a.valor ? toCents(a.valor) : undefined,
+        total_cents: a.valor_total && !a.valor ? toCents(a.valor_total) : undefined,
+        installments: a.parcelas,
+        current_installment: a.parcela_atual,
         date: a.data,
         account_id: account?.id ?? null,
       });
-      const pending = await receivables.listReceivables(ctx, { person: r.person });
-      return `✅ ${r.person} te deve ${brl(r.amount_cents)} (${r.description}) [devedor id ${r.id}]${
-        account ? `, no ${account.name} (fatura de ${monthLabel(r.month)})` : ""
-      }. Total pendente de ${r.person}: ${brl(pending.reduce((s, x) => s + x.amount_cents, 0))}.`;
+      const r = rows[0];
+      const pending = (await receivables.listReceivables(ctx, { person: r.person })).filter((x) => receivables.isDue(x, ctx.month));
+      const head =
+        rows.length > 1 || r.installment_total
+          ? `✅ ${r.person} te deve ${r.description} parcelado: ${rows.length}x (${rows
+              .map((x) => brl(x.amount_cents))
+              .filter((v, i, all) => all.indexOf(v) === i)
+              .join(" / ")}), parcelas ${r.installment_no}/${r.installment_total} a ${rows.at(-1)!.installment_no}/${r.installment_total}, de ${monthLabel(
+              r.month,
+            )} até ${monthLabel(rows.at(-1)!.month)}${account ? ` no ${account.name}` : ""} [devedor ids ${rows.map((x) => x.id).join(", ")}]`
+          : `✅ ${r.person} te deve ${brl(r.amount_cents)} (${r.description}) [devedor id ${r.id}]${
+              account ? `, no ${account.name} (fatura de ${monthLabel(r.month)})` : ""
+            }`;
+      return `${head}. Total pendente de ${r.person} até agora: ${brl(pending.reduce((s, x) => s + x.amount_cents, 0))}.`;
     },
   }),
 
   tool({
     name: "marcar_recebido",
     title: "Marcar dívida como recebida",
-    description: "Marca como recebido(s): por ids específicos ou tudo que está pendente de uma pessoa. Use `desfazer` para reverter.",
+    description:
+      "Marca como recebido(s): por ids específicos ou tudo que está pendente de uma pessoa. Use `desfazer` para reverter. " +
+      "Por pessoa, parcelas futuras de devedores parcelados não são marcadas, a menos que `incluir_parcelas_futuras` (ex.: a pessoa quitou tudo adiantado).",
     schema: z.object({
       pessoa: z.string().optional(),
       ids: z.array(z.number().int()).optional(),
       data: dateArg.optional(),
       desfazer: z.boolean().optional(),
+      incluir_parcelas_futuras: z.boolean().optional(),
     }),
     async run(a, ctx) {
-      const done = await receivables.markReceived(ctx, { ids: a.ids, person: a.pessoa, date: a.data, undo: a.desfazer });
+      const done = await receivables.markReceived(ctx, {
+        ids: a.ids,
+        person: a.pessoa,
+        date: a.data,
+        undo: a.desfazer,
+        include_future: a.incluir_parcelas_futuras,
+      });
       if (!done.length) return "Nada pendente encontrado.";
       const total = done.reduce((s, r) => s + r.amount_cents, 0);
       return `✅ ${a.desfazer ? "Voltaram a ficar pendentes" : "Recebido"}: ${done.length} item(ns), total ${brl(total)}:\n${done
-        .map((r) => `• [${r.id}] ${r.person} — ${r.description}: ${brl(r.amount_cents)}`)
+        .map((r) => `• [${r.id}] ${r.person} — ${r.description}${parcelLabel(r)}: ${brl(r.amount_cents)}`)
         .join("\n")}`;
     },
   }),
@@ -336,34 +375,69 @@ export const TOOLS: Tool<z.ZodObject>[] = [
   tool({
     name: "listar_devedores",
     title: "Listar devedores",
-    description: "Lista quem te deve e quanto (pendentes por padrão).",
+    description: "Lista quem te deve e quanto (pendentes por padrão). Parcelas futuras de devedores parcelados aparecem separadas.",
     schema: z.object({ pessoa: z.string().optional(), incluir_recebidos: z.boolean().optional() }),
     annotations: { readOnlyHint: true },
     async run(a, ctx) {
       const person = a.pessoa ? await receivables.resolvePerson(ctx, a.pessoa) : undefined;
-      const rows = await receivables.listReceivables(ctx, { status: a.incluir_recebidos ? "all" : "pending", person });
-      if (!rows.length) return "Ninguém te deve nada (pendente). 🎉";
+      const all = await receivables.listReceivables(ctx, { status: a.incluir_recebidos ? "all" : "pending", person });
+      // Parcelas que ainda não venceram ficam numa seção à parte
+      const future = all.filter((r) => !r.received_at && !receivables.isDue(r, ctx.month));
+      const rows = all.filter((r) => !future.includes(r));
+      if (!rows.length && !future.length) return "Ninguém te deve nada (pendente). 🎉";
       const names = await accountNames(ctx);
       const pending = rows.filter((r) => !r.received_at).reduce((s, r) => s + r.amount_cents, 0);
-      return [
-        `Total pendente: ${brl(pending)}`,
-        ...rows.map(
-          (r) =>
-            `• [${r.id}] ${r.person} — ${r.description}: ${brl(r.amount_cents)} (${formatDateBR(r.date)}${
-              r.account_id ? `, ${names.get(r.account_id)}` : ""
-            })${r.received_at ? ` ✔ recebido em ${formatDateBR(r.received_at)}` : ""}`,
-        ),
-      ].join("\n");
+      const line = (r: Receivable) =>
+        `• [${r.id}] ${r.person} — ${r.description}${parcelLabel(r)}: ${brl(r.amount_cents)} (${formatDateBR(r.date)}${
+          r.account_id ? `, ${names.get(r.account_id)}` : ""
+        })${r.received_at ? ` ✔ recebido em ${formatDateBR(r.received_at)}` : ""}`;
+      const out = [`Total pendente: ${brl(pending)}`, ...rows.map(line)];
+      if (future.length) {
+        out.push(
+          "",
+          `Parcelas futuras (ainda não venceram): ${brl(future.reduce((s, r) => s + r.amount_cents, 0))}`,
+          ...future.sort((x, y) => x.month.localeCompare(y.month) || x.id - y.id).map(line),
+        );
+      }
+      return out.join("\n");
+    },
+  }),
+
+  tool({
+    name: "registrar_entrada",
+    title: "Registrar entrada de dinheiro",
+    description:
+      "Registra uma entrada extra de dinheiro no mês, além do salário fixo: 13º salário, bônus, PLR, férias, freela, reembolso, venda etc. " +
+      "Ela soma na renda do mês e na sobra prevista. (O salário fixo mensal é configurado em Ajustes no app.)",
+    schema: z.object({
+      descricao: z.string().min(1).describe("Ex.: 13º salário, Bônus, PLR, Freela"),
+      valor: amountArg("Valor recebido, em reais"),
+      data: dateArg.optional(),
+      mes: monthArg.optional().describe("Mês em que a entrada conta (YYYY-MM). Padrão: mês da data."),
+      observacao: z.string().optional(),
+    }),
+    async run(a, ctx) {
+      const i = await incomes.createIncome(ctx, {
+        description: a.descricao,
+        amount_cents: toCents(a.valor),
+        date: a.data,
+        month: a.mes,
+        notes: a.observacao ?? null,
+      });
+      const t = (await summary.getSummary(ctx, i.month)).totals;
+      return `✅ Entrada registrada [id ${i.id}]: ${i.description} — ${brl(i.amount_cents)} em ${monthLabel(i.month)}. Renda do mês: ${brl(
+        t.income_cents ?? 0,
+      )}${t.leftover_cents != null ? `; sobra prevista: ${brl(t.leftover_cents)}` : ""}.`;
     },
   }),
 
   tool({
     name: "listar_lancamentos",
     title: "Listar lançamentos",
-    description: "Lista os lançamentos de um mês: avulsos, parcelados e/ou fixos, com ids (para editar ou remover).",
+    description: "Lista os lançamentos de um mês: avulsos, parcelados, fixos e/ou entradas extras, com ids (para editar ou remover).",
     schema: z.object({
       mes: monthArg.optional(),
-      tipo: z.enum(["todos", "avulsos", "parcelados", "fixos"]).optional(),
+      tipo: z.enum(["todos", "avulsos", "parcelados", "fixos", "entradas"]).optional(),
       conta: z.string().optional().describe("Filtra avulsos por cartão/conta"),
       orcamento: z.string().optional().describe("Filtra avulsos de um orçamento"),
       busca: z.string().optional().describe("Texto na descrição (avulsos)"),
@@ -404,6 +478,14 @@ export const TOOLS: Tool<z.ZodObject>[] = [
             }${e.shared_cents ? ` +${brl(e.shared_cents)} de outros` : ""}`,
           );
       }
+      if (tipo === "todos" || tipo === "entradas") {
+        const list = await incomes.listIncomes(ctx, m);
+        // Em "todos", a seção só aparece se houver entradas no mês
+        if (list.length || tipo === "entradas") {
+          out.push("", `Entradas extras (${brl(list.reduce((s, i) => s + i.amount_cents, 0))}):`);
+          for (const i of list) out.push(`• [${i.id}] ${formatDateBR(i.date)} ${i.description}: ${brl(i.amount_cents)}`);
+        }
+      }
       return out.join("\n");
     },
   }),
@@ -413,7 +495,7 @@ export const TOOLS: Tool<z.ZodObject>[] = [
     title: "Editar lançamento",
     description: "Edita um lançamento existente pelo id (veja os ids com listar_lancamentos / listar_devedores).",
     schema: z.object({
-      tipo: z.enum(["avulso", "parcelado", "fixo", "devedor"]),
+      tipo: z.enum(["avulso", "parcelado", "fixo", "devedor", "entrada"]),
       id: z.number().int(),
       descricao: z.string().optional(),
       valor: z.number().positive().optional().describe("Novo valor em reais (para parcelado: valor da parcela; para fixo: valor padrão)"),
@@ -459,6 +541,10 @@ export const TOOLS: Tool<z.ZodObject>[] = [
           });
           return `✅ Devedor [${r.id}] atualizado: ${r.person} — ${r.description}: ${brl(r.amount_cents)}.`;
         }
+        case "entrada": {
+          const i = await incomes.updateIncome(ctx, a.id, { description: a.descricao, amount_cents: cents, date: a.data, month: a.mes_referencia });
+          return `✅ Entrada [${i.id}] atualizada: ${i.description} — ${brl(i.amount_cents)} em ${monthLabel(i.month)}.`;
+        }
       }
     },
   }),
@@ -467,13 +553,15 @@ export const TOOLS: Tool<z.ZodObject>[] = [
     name: "remover_lancamento",
     title: "Remover lançamento",
     description:
-      "Remove definitivamente um lançamento pelo id. Para fixos/assinaturas, prefira ajustar_fixo com encerrar_apos (mantém o histórico). Confirme com o usuário antes.",
+      "Remove definitivamente um lançamento pelo id. Para fixos/assinaturas, prefira ajustar_fixo com encerrar_apos (mantém o histórico). " +
+      "Para devedor parcelado, `todas_parcelas` remove todas as parcelas ainda não recebidas. Confirme com o usuário antes.",
     schema: z.object({
-      tipo: z.enum(["avulso", "parcelado", "fixo", "devedor", "meta", "movimentacao_meta"]),
+      tipo: z.enum(["avulso", "parcelado", "fixo", "devedor", "entrada", "meta", "movimentacao_meta"]),
       id: z.number().int(),
+      todas_parcelas: z.boolean().optional().describe("Só devedor parcelado: remove todas as parcelas pendentes do parcelamento"),
     }),
     annotations: { destructiveHint: true },
-    async run({ tipo, id }, ctx) {
+    async run({ tipo, id, todas_parcelas }, ctx) {
       switch (tipo) {
         case "avulso": {
           const e = await expenses.deleteExpense(ctx, id);
@@ -488,8 +576,19 @@ export const TOOLS: Tool<z.ZodObject>[] = [
           return `🗑️ Fixo removido: ${r.description}.`;
         }
         case "devedor": {
+          if (todas_parcelas) {
+            const { deleted } = await receivables.deleteReceivableGroup(ctx, id);
+            const first = deleted[0];
+            return first
+              ? `🗑️ ${deleted.length} parcela(s) pendente(s) removida(s): ${first.person} — ${first.description} (${brl(deleted.reduce((s, r) => s + r.amount_cents, 0))}).`
+              : "Nenhuma parcela pendente para remover.";
+          }
           const r = await receivables.deleteReceivable(ctx, id);
-          return `🗑️ Devedor removido: ${r.person} — ${r.description}.`;
+          return `🗑️ Devedor removido: ${r.person} — ${r.description}${parcelLabel(r)}.`;
+        }
+        case "entrada": {
+          const i = await incomes.deleteIncome(ctx, id);
+          return `🗑️ Entrada removida: ${i.description} (${brl(i.amount_cents)}).`;
         }
         case "meta": {
           const g = await goals.deleteGoal(ctx, id);

@@ -5,7 +5,8 @@ import { listAccounts } from "./accounts";
 import { listExpenses } from "./expenses";
 import { listGoals } from "./goals";
 import { listInstallments } from "./installments";
-import { listPeople, listReceivables } from "./receivables";
+import { listIncomes } from "./incomes";
+import { isDue, listPeople, listReceivables } from "./receivables";
 import { listRecurring } from "./recurring";
 
 export const SettingsPatch = z.object({
@@ -39,7 +40,7 @@ export async function updateSettings(ctx: Ctx, patch: z.input<typeof SettingsPat
  * - por conta = o que efetivamente cai em cada cartão/conta (inclui a parte dos devedores passada no cartão)
  */
 export async function getSummary(ctx: Ctx, month: string): Promise<Summary> {
-  const [accounts, installments, recurring, expenses, receivablesMonth, pending, goals, settings, peopleNames] = await Promise.all([
+  const [accounts, installments, recurring, expenses, receivablesMonth, allPending, goals, settings, peopleNames, incomes] = await Promise.all([
     listAccounts(ctx, true),
     listInstallments(ctx, month),
     listRecurring(ctx, month),
@@ -49,7 +50,13 @@ export async function getSummary(ctx: Ctx, month: string): Promise<Summary> {
     listGoals(ctx, month),
     getSettings(ctx),
     listPeople(ctx),
+    listIncomes(ctx, month),
   ]);
+
+  // Parcelas de devedores parcelados só contam como pendentes a partir do mês delas
+  const refMonth = month > ctx.month ? month : ctx.month;
+  const pending = allPending.filter((r) => isDue(r, refMonth));
+  const future = allPending.filter((r) => !isDue(r, refMonth));
 
   const byAccount = new Map<number | null, number>();
   const add = (id: number | null, cents: number) => byAccount.set(id, (byAccount.get(id) ?? 0) + cents);
@@ -113,6 +120,8 @@ export async function getSummary(ctx: Ctx, month: string): Promise<Summary> {
   }
 
   const total = installmentsTotal + recurringTotal + oneOff;
+  const incomeExtra = incomes.reduce((s, i) => s + i.amount_cents, 0);
+  const income = settings.income_cents == null && incomeExtra === 0 ? null : (settings.income_cents ?? 0) + incomeExtra;
   const goalsPlanned = goals.reduce((s, g) => s + g.month_planned_cents, 0);
   const goalsDone = goals.reduce((s, g) => s + Math.max(g.month_contrib_cents, 0), 0);
 
@@ -127,10 +136,13 @@ export async function getSummary(ctx: Ctx, month: string): Promise<Summary> {
       total_cents: total,
       receivable_month_cents: receivablesMonth.reduce((s, r) => s + r.amount_cents, 0),
       receivable_pending_cents: pending.reduce((s, r) => s + r.amount_cents, 0),
-      income_cents: settings.income_cents,
+      receivable_future_cents: future.reduce((s, r) => s + r.amount_cents, 0),
+      income_cents: income,
+      income_base_cents: settings.income_cents,
+      income_extra_cents: incomeExtra,
       goals_planned_cents: goalsPlanned,
       goals_done_cents: goalsDone,
-      leftover_cents: settings.income_cents != null ? settings.income_cents - total - Math.max(goalsPlanned, goalsDone) : null,
+      leftover_cents: income != null ? income - total - Math.max(goalsPlanned, goalsDone) : null,
     },
     by_account,
     budgets,
@@ -140,11 +152,11 @@ export async function getSummary(ctx: Ctx, month: string): Promise<Summary> {
 
 /** Backup completo em JSON. */
 export async function exportAll(ctx: Ctx) {
-  const tables = ["accounts", "recurring", "recurring_months", "installments", "expenses", "receivables", "goals", "goal_entries", "settings"];
+  const tables = ["accounts", "recurring", "recurring_months", "installments", "expenses", "receivables", "incomes", "goals", "goal_entries", "settings"];
   const results = await ctx.db.batch(tables.map((t) => ctx.db.prepare(`SELECT * FROM ${t}`)));
   return {
     exported_at: new Date().toISOString(),
-    version: 1,
+    version: 2,
     tables: Object.fromEntries(tables.map((t, i) => [t, results[i].results])),
   };
 }

@@ -76,6 +76,20 @@ export interface Receivable {
   account_id: number | null;
   expense_id: number | null;
   received_at: string | null;
+  /** Devedor parcelado: id do parcelamento, nº desta parcela e total de parcelas (null se à vista). */
+  installment_group: string | null;
+  installment_no: number | null;
+  installment_total: number | null;
+}
+
+/** Entrada extra de dinheiro no mês (13º, bônus, PLR...). O salário fixo fica em Settings.income_cents. */
+export interface Income {
+  id: number;
+  description: string;
+  amount_cents: number;
+  date: string;
+  month: string;
+  notes: string | null;
 }
 
 export type GoalEntryKind = "contribution" | "withdrawal" | "adjustment";
@@ -143,8 +157,14 @@ export interface Summary {
     budget_overflow_cents: number;
     total_cents: number;
     receivable_month_cents: number;
+    /** Pendente já "vencido" (inclui parcelas de devedores parcelados até o mês). */
     receivable_pending_cents: number;
+    /** Parcelas futuras de devedores parcelados, ainda não vencidas. */
+    receivable_future_cents: number;
+    /** Renda total do mês = salário fixo + entradas extras (null se nenhum dos dois). */
     income_cents: number | null;
+    income_base_cents: number | null;
+    income_extra_cents: number;
     goals_planned_cents: number;
     goals_done_cents: number;
     /** Renda - gastos - aportes planejados (null se renda não configurada). */

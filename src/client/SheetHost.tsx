@@ -2,6 +2,7 @@ import { useState } from "react";
 import { AccountForm } from "./forms/AccountForm";
 import { ExpenseForm } from "./forms/ExpenseForm";
 import { GoalDetail, GoalForm } from "./forms/GoalForms";
+import { IncomeForm } from "./forms/IncomeForm";
 import { InstallmentForm } from "./forms/InstallmentForm";
 import { ReceivableForm } from "./forms/ReceivableForm";
 import { RecurringForm } from "./forms/RecurringForm";
@@ -14,6 +15,7 @@ const TABS: { value: NewTab; label: string }[] = [
   { value: "installment", label: "Parcelado" },
   { value: "recurring", label: "Fixo" },
   { value: "receivable", label: "Devedor" },
+  { value: "income", label: "Entrada" },
 ];
 
 function NewEntry({ tab: initial, budgetId, onDone }: { tab?: NewTab; budgetId?: number; onDone: () => void }) {
@@ -25,6 +27,7 @@ function NewEntry({ tab: initial, budgetId, onDone }: { tab?: NewTab; budgetId?:
       {tab === "installment" && <InstallmentForm key="i" onDone={onDone} />}
       {tab === "recurring" && <RecurringForm key="r" onDone={onDone} />}
       {tab === "receivable" && <ReceivableForm key="d" onDone={onDone} />}
+      {tab === "income" && <IncomeForm key="n" onDone={onDone} />}
     </div>
   );
 }
@@ -62,6 +65,12 @@ export function SheetHost() {
       return (
         <Sheet title="Editar devedor" onClose={closeSheet}>
           <ReceivableForm item={sheet.item} onDone={done} />
+        </Sheet>
+      );
+    case "income":
+      return (
+        <Sheet title="Editar entrada" onClose={closeSheet}>
+          <IncomeForm item={sheet.item} onDone={done} />
         </Sheet>
       );
     case "goal":

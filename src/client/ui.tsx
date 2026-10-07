@@ -216,7 +216,9 @@ export function Segmented<T extends string>({ options, value, onChange }: { opti
           aria-selected={o.value === value}
           onClick={() => onChange(o.value)}
           className={cx(
-            "h-9 flex-1 rounded-lg px-2 text-sm font-semibold transition",
+            "h-9 min-w-0 flex-1 rounded-lg font-semibold transition",
+            // 5+ opções: texto menor para caber em telas de celular estreitas
+            options.length > 4 ? "px-0.5 text-[13px] sm:text-sm" : "px-2 text-sm",
             o.value === value ? "bg-surface text-text shadow-sm" : "text-muted hover:text-text",
           )}
         >

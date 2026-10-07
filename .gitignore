@@ -7,3 +7,5 @@ dist
 *.local.sql
 *.log
 .DS_Store
+# Backups do banco de produção (dados pessoais)
+backups/

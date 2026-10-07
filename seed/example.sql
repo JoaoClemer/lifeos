@@ -42,3 +42,14 @@ INSERT INTO goals (id, name, institution, target_cents, monthly_cents, deadline,
 INSERT INTO goal_entries (goal_id, kind, amount_cents, month, date, note) VALUES
   (1, 'adjustment', 500000, strftime('%Y-%m', 'now', 'start of month', '-6 months'), date('now', 'start of month', '-6 months'), 'Saldo inicial'),
   (2, 'adjustment', 120000, strftime('%Y-%m', 'now', 'start of month', '-2 months'), date('now', 'start of month', '-2 months'), 'Saldo inicial');
+
+-- Entrada extra no mês (além do salário fixo em settings.income_cents)
+INSERT INTO incomes (description, amount_cents, date, month) VALUES
+  ('Bônus', 150000, date('now', 'start of month', '+4 days'), strftime('%Y-%m', 'now'));
+
+-- Devedor parcelado: 4x de R$ 250 passado no cartão para outra pessoa (parcela 2 cai neste mês)
+INSERT INTO receivables (person, description, amount_cents, date, month, account_id, installment_group, installment_no, installment_total) VALUES
+  ('Pedro', 'Celular', 25000, date('now', 'start of month', '-1 months'), strftime('%Y-%m', 'now', 'start of month', '-1 months'), 1, 'example-celular', 1, 4),
+  ('Pedro', 'Celular', 25000, date('now', 'start of month', '-1 months'), strftime('%Y-%m', 'now'),                               1, 'example-celular', 2, 4),
+  ('Pedro', 'Celular', 25000, date('now', 'start of month', '-1 months'), strftime('%Y-%m', 'now', 'start of month', '+1 months'), 1, 'example-celular', 3, 4),
+  ('Pedro', 'Celular', 25000, date('now', 'start of month', '-1 months'), strftime('%Y-%m', 'now', 'start of month', '+2 months'), 1, 'example-celular', 4, 4);

@@ -71,7 +71,10 @@ export function SettingsView({ onLogout }: { onLogout: () => void }) {
 
       <Section title="Renda mensal">
         <Card className="space-y-3 p-4">
-          <Field label="Quanto entra por mês (opcional)" hint="Usado para calcular quanto sobra depois dos gastos e aportes.">
+          <Field
+            label="Salário líquido fixo (opcional)"
+            hint="Vale para todos os meses e é usado para calcular quanto sobra. 13º, bônus e outras entradas extras você lança em + → Entrada."
+          >
             <MoneyInput value={income} onChange={setIncome} />
           </Field>
           <Button

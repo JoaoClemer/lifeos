@@ -21,19 +21,22 @@ Ele nasceu para substituir uma planilha de controle mensal, com abas para compra
 
 | Tela | O que faz |
 |---|---|
-| **Resumo** | Total de gastos do mês (parcelados + fixos + avulsos), quanto cai em cada cartão, andamento dos orçamentos, quem te deve, aportes do mês e quanto sobra da renda |
+| **Resumo** | Total de gastos do mês (parcelados + fixos + avulsos), quanto cai em cada cartão, andamento dos orçamentos, quem te deve, aportes do mês, entradas do mês e quanto sobra da renda |
 | **Gastos → Avulsos** | Lançamentos do mês agrupados por dia, com filtro por cartão ou orçamento |
 | **Gastos → Parcelados** | Parcela atual (ex.: 4/12), mês da última parcela, quanto falta pagar e o que termina neste mês |
 | **Gastos → Fixos** | Assinaturas e contas: marcar como pago, ajustar o valor só de um mês (ex.: conta de luz), encerrar. E os **orçamentos** |
-| **Devedores** | Quem te deve, agrupado por pessoa, com “Recebi tudo” |
+| **Devedores** | Quem te deve, agrupado por pessoa, com “Recebi tudo”. Aceita **devedor parcelado**: as próximas parcelas ficam separadas até vencerem |
 | **Metas** | Saldo investido, valor da meta, aporte mensal com check, previsão de quando atinge e quanto guardar por mês para cumprir o prazo |
-| **Ajustes** | Cartões (dia de fechamento e vencimento), renda mensal, link do conector do Claude e backup em JSON |
+| **Entradas** | Dinheiro além do salário fixo (13º, bônus, PLR, freela…), somado à renda do mês em que entra |
+| **Ajustes** | Cartões (dia de fechamento e vencimento), salário líquido fixo, link do conector do Claude e backup em JSON |
 
 ### Como as regras funcionam
 
 - **Fatura do cartão:** com o dia de fechamento cadastrado, uma compra feita no dia do fechamento ou depois vai sozinha para a fatura seguinte. O "mês" de um gasto no crédito é o mês em que a fatura vence.
 - **Orçamentos** (os “fixos a descontar”): você reserva um valor por mês, por exemplo R$ 600 de almoço, e lança os gastos dentro dele. O app mostra quanto falta. Esses gastos não somam de novo no total do mês; só entra o que passar do valor reservado.
 - **Dividir com alguém:** ao lançar um gasto, sua parte fica nos seus gastos e a parte de cada pessoa vira um **devedor**, no mesmo cartão. Assim a fatura bate com o valor cobrado e você sabe quanto vai receber.
+- **Devedor parcelado:** quando você passa no seu cartão uma compra parcelada de outra pessoa, cada parcela vira um devedor no mês da fatura dela. Ela só passa a contar como pendente quando o mês chega, e entra na fatura daquele mês. “Recebi tudo” marca só o que já venceu.
+- **Renda do mês:** salário fixo (em Ajustes) + entradas extras do mês. A sobra prevista é renda − gastos − aportes planejados.
 - **Metas:** cada meta é uma “caixinha” com saldo. Aportes, resgates e atualizações de saldo (rendimentos) ficam no histórico. O check do mês lança o aporte planejado.
 
 ## Conversando com o Claude (MCP)
@@ -45,7 +48,9 @@ O mesmo Worker que serve o app expõe um servidor MCP. Depois de adicioná-lo co
 - “Comprei um notebook de 5.400 em 12x”
 - “A conta de luz desse mês veio 212,37”
 - “Cancela o streaming a partir de dezembro”
-- “O Pedro me pagou tudo”
+- “Passei um celular de 2.400 em 12x no cartão pro Pedro”: registra as 12 parcelas como devedor.
+- “O Pedro me pagou tudo”: marca o que já venceu; as parcelas futuras continuam pendentes.
+- “Recebi 3.100 de 13º”: soma na renda do mês.
 - “Faz o aporte do mês na reserva de emergência”
 - “Como estou esse mês?” / “Quanto falta do orçamento de transporte?”
 
@@ -56,7 +61,8 @@ O mesmo Worker que serve o app expõe um servidor MCP. Depois de adicioná-lo co
 | `lancar_despesa` | Gasto avulso, com orçamento e divisão entre pessoas opcionais |
 | `lancar_parcelado` | Compra parcelada (nova ou já em andamento) |
 | `adicionar_fixo` / `ajustar_fixo` | Cadastrar, ajustar no mês, marcar como pago ou encerrar fixos e orçamentos |
-| `registrar_devedor` / `marcar_recebido` / `listar_devedores` | Quem te deve |
+| `registrar_devedor` / `marcar_recebido` / `listar_devedores` | Quem te deve (à vista ou parcelado) |
+| `registrar_entrada` | Entrada extra no mês: 13º, bônus, PLR, freela |
 | `listar_lancamentos` / `editar_lancamento` / `remover_lancamento` | Consultar e corrigir lançamentos |
 | `criar_meta` / `registrar_aporte` / `atualizar_saldo_meta` / `listar_metas` | Metas e investimentos |
 | `cadastrar_conta` | Cadastrar cartões e formas de pagamento |
@@ -129,7 +135,7 @@ Para abrir no celular na mesma rede Wi-Fi: `http://<ip-do-computador>:5173`.
    npx wrangler secret put MCP_TOKEN      # cole o token gerado
    ```
 
-Para atualizar depois, rode `npm run deploy`. Se criar migrações novas em `migrations/`, rode `npm run db:migrate:remote` antes.
+Para atualizar depois, rode `npm run deploy`. Se houver migrações novas em `migrations/`, rode `npm run db:migrate:remote` **antes** do deploy. As migrações são só aditivas, então a versão que está no ar continua funcionando enquanto isso.
 
 **Instalar no celular:** abra o endereço no Safari (iPhone) ou no Chrome (Android) e toque em **Compartilhar → Adicionar à Tela de Início**.
 
@@ -170,7 +176,7 @@ migrations/          schema do banco (D1/SQLite)
 seed/example.sql     dados fictícios para desenvolvimento
 src/shared/          tipos e utilitários (meses, dinheiro) usados no front e no Worker
 src/worker/          Worker: API REST (Hono), autenticação, serviços e servidor MCP
-  services/          regras de negócio (contas, gastos, parcelados, fixos, devedores, metas, resumo)
+  services/          regras de negócio (contas, gastos, parcelados, fixos, devedores, entradas, metas, resumo)
   mcp/               protocolo MCP e definição das ferramentas
 src/client/          app React (PWA)
   views/             telas (resumo, gastos, devedores, metas, ajustes)

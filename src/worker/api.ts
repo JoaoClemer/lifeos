@@ -4,6 +4,7 @@ import { makeCtx, UserError } from "./lib";
 import * as accounts from "./services/accounts";
 import * as expenses from "./services/expenses";
 import * as goals from "./services/goals";
+import * as incomes from "./services/incomes";
 import * as installments from "./services/installments";
 import * as receivables from "./services/receivables";
 import * as recurring from "./services/recurring";
@@ -102,12 +103,29 @@ api.get("/receivables", async (c) => {
   );
 });
 api.get("/people", async (c) => c.json(await receivables.listPeople(ctxOf(c))));
-api.post("/receivables", async (c) => c.json(await receivables.createReceivable(ctxOf(c), await c.req.json()), 201));
+api.post("/receivables", async (c) => {
+  const rows = await receivables.createReceivable(ctxOf(c), await c.req.json());
+  // Mantém a resposta de antes (o devedor criado); parcelados devolvem a 1ª parcela + todas em `installments`
+  return c.json(rows.length > 1 ? { ...rows[0], installments: rows } : rows[0], 201);
+});
 api.post("/receivables/mark-received", async (c) => c.json(await receivables.markReceived(ctxOf(c), await c.req.json())));
 api.patch("/receivables/:id", async (c) =>
   c.json(await receivables.updateReceivable(ctxOf(c), idParam(c.req.param("id")), await c.req.json())),
 );
-api.delete("/receivables/:id", async (c) => c.json(await receivables.deleteReceivable(ctxOf(c), idParam(c.req.param("id")))));
+api.delete("/receivables/:id", async (c) => {
+  const id = idParam(c.req.param("id"));
+  // ?group=1 exclui todas as parcelas pendentes do parcelamento
+  return c.json(c.req.query("group") === "1" ? await receivables.deleteReceivableGroup(ctxOf(c), id) : await receivables.deleteReceivable(ctxOf(c), id));
+});
+
+// ---- Entradas extras (13º, bônus...) ----
+api.get("/incomes", async (c) => {
+  const ctx = ctxOf(c);
+  return c.json(await incomes.listIncomes(ctx, monthQuery(c.req.query("month"), ctx.month)));
+});
+api.post("/incomes", async (c) => c.json(await incomes.createIncome(ctxOf(c), await c.req.json()), 201));
+api.patch("/incomes/:id", async (c) => c.json(await incomes.updateIncome(ctxOf(c), idParam(c.req.param("id")), await c.req.json())));
+api.delete("/incomes/:id", async (c) => c.json(await incomes.deleteIncome(ctxOf(c), idParam(c.req.param("id")))));
 
 // ---- Metas / investimentos ----
 api.get("/goals", async (c) => {
