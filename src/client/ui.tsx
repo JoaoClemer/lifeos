@@ -1,5 +1,5 @@
 import { Banknote, Check, ChevronLeft, ChevronRight, CreditCard, Landmark, QrCode, Ticket, Wallet, X } from "lucide-react";
-import { type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes, useEffect, useId, useRef } from "react";
+import { type ButtonHTMLAttributes, Component, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes, useEffect, useId, useRef } from "react";
 import { formatBRL } from "../shared/money";
 import { addMonths, monthTitle } from "../shared/month";
 import type { AccountType } from "../shared/types";
@@ -68,13 +68,33 @@ export function LinkButton({ children, onClick }: { children: ReactNode; onClick
 export function Sheet({ title, onClose, children, footer }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    // Foco: entra no modal (se nenhum campo já pegou o foco), fica preso nele com Tab e volta para onde estava ao fechar
+    const opener = document.activeElement as HTMLElement | null;
+    if (ref.current && !ref.current.contains(document.activeElement)) ref.current.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") return onClose();
+      if (e.key !== "Tab" || !ref.current) return;
+      const items = [...ref.current.querySelectorAll<HTMLElement>("button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])")].filter(
+        (el) => !el.hasAttribute("disabled") && el.offsetParent !== null,
+      );
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (e.shiftKey && (document.activeElement === first || document.activeElement === ref.current)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
     document.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
+      if (opener?.isConnected) opener.focus();
     };
   }, [onClose]);
   return (
@@ -82,7 +102,8 @@ export function Sheet({ title, onClose, children, footer }: { title: string; onC
       <div className="animate-fade absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={onClose} />
       <div
         ref={ref}
-        className="animate-sheet relative flex max-h-[92dvh] w-full flex-col rounded-t-3xl bg-surface shadow-2xl md:max-w-lg md:rounded-3xl"
+        tabIndex={-1}
+        className="animate-sheet relative flex max-h-[92dvh] w-full flex-col rounded-t-3xl bg-surface shadow-2xl outline-none md:max-w-lg md:rounded-3xl"
       >
         <div className="flex items-center justify-between px-5 pb-2 pt-4">
           <h2 className="text-lg font-semibold">{title}</h2>
@@ -396,6 +417,42 @@ export function Row({
       <div className="pointer-events-none relative flex w-full items-center gap-3 px-4 py-3">{inner}</div>
     </div>
   );
+}
+
+/** Falha ao carregar os dados de uma tela, com opção de tentar de novo. */
+export function LoadError({ error, onRetry }: { error: string; onRetry: () => void }) {
+  return (
+    <div role="alert" className="flex flex-col items-center rounded-2xl border border-danger/30 bg-danger-soft px-6 py-8 text-center">
+      <p className="font-semibold text-danger">Não foi possível carregar</p>
+      <p className="mt-1 max-w-xs text-sm text-muted">{error}</p>
+      <Button variant="secondary" className="mt-4" onClick={onRetry}>
+        Tentar de novo
+      </Button>
+    </div>
+  );
+}
+
+/** Um erro inesperado numa tela mostra um aviso nela, em vez de derrubar o app inteiro. */
+export class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null };
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+  componentDidCatch(error: Error) {
+    console.error(error);
+  }
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <div role="alert" className="flex flex-col items-center rounded-2xl border border-border px-6 py-10 text-center">
+        <p className="font-semibold">Algo deu errado nesta tela</p>
+        <p className="mt-1 max-w-xs text-sm text-muted">{this.state.error.message}</p>
+        <Button variant="secondary" className="mt-4" onClick={() => location.reload()}>
+          Recarregar
+        </Button>
+      </div>
+    );
+  }
 }
 
 export function List({ children }: { children: ReactNode }) {

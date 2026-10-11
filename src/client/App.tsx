@@ -9,7 +9,7 @@ import { TodayView } from "./modules/today/TodayView";
 import { MOBILE_TABS, NAV, NAV_SECTIONS } from "./nav";
 import { SheetHost } from "./SheetHost";
 import { AppProvider, clearCache, type NewTab, useApp } from "./state";
-import { Button, cx, TextInput } from "./ui";
+import { Button, cx, ErrorBoundary, TextInput } from "./ui";
 import { ExpensesView } from "./views/ExpensesView";
 import { GoalsView } from "./views/GoalsView";
 import { ReceivablesView } from "./views/ReceivablesView";
@@ -155,7 +155,10 @@ function Shell({ onLogout }: { onLogout: () => void }) {
           </div>
         </header>
 
-        <main className="mx-auto max-w-3xl px-4 pb-32 pt-4 md:px-8 md:pb-16 md:pt-6">{page}</main>
+        <main className="mx-auto max-w-3xl px-4 pb-32 pt-4 md:px-8 md:pb-16 md:pt-6">
+          {/* key: trocar de tela limpa um erro anterior */}
+          <ErrorBoundary key={current.view}>{page}</ErrorBoundary>
+        </main>
       </div>
 
       {/* Navegação inferior (mobile) */}

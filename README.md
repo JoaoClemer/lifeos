@@ -1,12 +1,15 @@
-# Finanças pessoais com MCP
+# LifeOS
 
-App de finanças pessoais para controlar o mês **pelo celular, pelo computador ou conversando com o Claude**.
+Sistema pessoal para planejar, executar e acompanhar o dia a dia: **agenda, tarefas, treinos e finanças** num só lugar, **pelo celular, pelo computador ou conversando com o Claude**.
 
-Ele nasceu para substituir uma planilha de controle mensal, com abas para compras parceladas, gastos fixos, lançamentos do mês, quem me deve e o que descontar dos valores reservados. A ideia era manter a mesma lógica, mas com três vantagens sobre a planilha:
+A ideia é abrir o app e responder rápido a quatro perguntas: o que tenho para fazer, o que planejei para hoje, o que consegui executar e como estão minhas finanças.
 
-- **Lançar um gasto em segundos no celular**, como um app instalado (PWA).
-- **Lançar conversando:** um servidor [MCP](https://modelcontextprotocol.io) conecta o app ao Claude, então dá para dizer *"lança 32,50 de almoço no VR"* ou *"gastei 186 no jantar no cartão, metade é da Ana"*.
+- **Hoje:** compromissos, tarefas atrasadas e do dia, treino planejado e o resumo financeiro do mês numa tela só.
+- **Registrar em segundos no celular**, como um app instalado (PWA).
+- **Conversando:** um servidor [MCP](https://modelcontextprotocol.io) conecta o app ao Claude. Dá para dizer *"marca dentista quinta às 14h"*, *"corri 8 km em 50 minutos"*, *"terminei o relatório"* ou *"lança 32,50 de almoço no VR"*.
 - **Custo zero:** roda inteiro no plano gratuito da Cloudflare (Workers + banco D1). Não precisa de servidor, domínio, banco pago nem computador ligado.
+
+O módulo de finanças nasceu para substituir uma planilha de controle mensal. Agenda, tarefas e treinos vieram depois, seguindo o [plano do LifeOS](docs/lifeos-plan.md).
 
 <p align="center">
   <img src="docs/screenshots/summary.jpg" width="200" alt="Resumo do mês" />
@@ -18,6 +21,25 @@ Ele nasceu para substituir uma planilha de controle mensal, com abas para compra
 <p align="center"><sub>Capturas com dados fictícios.</sub></p>
 
 ## Funcionalidades
+
+### Dia a dia
+
+| Tela | O que faz |
+|---|---|
+| **Hoje** | Tela inicial: atalhos (tarefa, evento, treino, gasto), compromissos e horários reservados do dia, tarefas atrasadas, de hoje e prioritárias, treino do dia, finanças do mês e um resumo da semana |
+| **Agenda** | Visões de dia, semana e mês. Eventos com horário ou de dia inteiro, local, link da reunião, categoria, cor e repetição (diária, semanal em dias escolhidos, mensal, anual; até uma data ou por número de vezes). Em evento repetido, a alteração vale para só esta, esta e as próximas, ou todas as ocorrências |
+| **Tarefas** | Abertas agrupadas por prazo (atrasadas, hoje, próximos 7 dias, depois, sem prazo), com filtros de projeto e prioridade; concluídas por dia; projetos com progresso. Subtarefas, etiquetas, tempo estimado e "Reservar horário" na agenda |
+| **Treinos** | Semana com planejado × realizado, % de cumprimento e volume por modalidade (corrida, ciclismo, natação, musculação, outros); histórico por mês. Resultado com duração, distância, ritmo calculado, frequência cardíaca e esforço percebido |
+
+### Como os módulos se ligam
+
+- **Prazo não é horário.** Uma tarefa pode ter prazo sem ocupar a agenda. Para reservar um horário, cria-se um evento ligado à tarefa; quem guarda se ela foi concluída continua sendo a tarefa.
+- **Treinos aparecem na agenda** pelo horário planejado, sem cópia: a agenda lê os treinos do módulo de treinos.
+- **Planejado e realizado ficam separados.** Registrar um treino preenche o resultado no próprio treino planejado (nunca duplica), e o plano original continua guardado para comparar.
+- **Finanças em Hoje** vêm do resumo do mês do módulo de finanças, sem recalcular nada.
+- **Horários no relógio local** (fuso de São Paulo): "toda segunda às 19h" continua às 19h se o horário de verão voltar. Horários que não existem por causa da mudança de horário são recusados.
+
+### Finanças
 
 | Tela | O que faz |
 |---|---|
@@ -44,6 +66,13 @@ Ele nasceu para substituir uma planilha de controle mensal, com abas para compra
 
 O mesmo Worker que serve o app expõe um servidor MCP. Depois de adicioná-lo como conector no Claude (web, desktop ou celular), dá para usar linguagem natural:
 
+- “Como está meu dia?” / “Faz a revisão da semana”
+- “O que tenho amanhã?” / “Marca dentista quinta às 14h no Centro”
+- “Toda segunda e quarta tenho inglês às 19h”: cria a série.
+- “A aula de inglês de quarta vai ser às 18h30, só essa”: altera só aquela ocorrência.
+- “Anota: renovar a CNH até sexta, prioridade alta” / “Terminei o relatório”
+- “Reserva das 14h às 16h de amanhã para estudar para a prova”: o horário fica ligado à tarefa.
+- “Planeja um longão de 18 km no sábado às 7h” / “Corri 8,2 km em 52 minutos, esforço 6”
 - “Lança 32,50 de almoço no VR”: desconta do orçamento de almoço.
 - “Gastei 186 no jantar no cartão, metade é da Ana”: sua parte vira gasto e a da Ana vira devedor.
 - “Comprei um notebook de 5.400 em 12x”
@@ -69,8 +98,18 @@ O mesmo Worker que serve o app expõe um servidor MCP. Depois de adicioná-lo co
 | `listar_lancamentos` / `editar_lancamento` / `remover_lancamento` | Consultar e corrigir lançamentos |
 | `criar_meta` / `registrar_aporte` / `atualizar_saldo_meta` / `listar_metas` | Metas e investimentos |
 | `cadastrar_conta` | Cadastrar cartões e formas de pagamento |
+| `revisao_diaria` / `revisao_semanal` | Resumo do dia (agenda de hoje e amanhã, tarefas, treino, finanças) e da semana |
+| `agenda` / `criar_evento` / `editar_evento` / `cancelar_evento` | Consultar e manter a agenda, inclusive eventos repetidos e horários reservados para tarefas |
+| `listar_tarefas` / `criar_tarefa` / `concluir_tarefa` / `editar_tarefa` / `remover_tarefa` / `criar_projeto` | Tarefas e projetos |
+| `treinos_semana` / `planejar_treino` / `registrar_treino` / `status_treino` / `remover_treino` | Treinos planejados e realizados |
 
 As ferramentas e seus parâmetros estão em português de propósito: é o que o Claude usa para casar com o que você fala.
+
+**Segurança das ações pelo Claude:**
+
+- **Exclusões exigem confirmação:** sem `confirmar: true`, a ferramenta só mostra o que seria excluído. Em evento repetido, é preciso dizer o alcance (só esta, esta e as seguintes, ou todas).
+- **Sem duplicatas:** repetir uma criação nos minutos seguintes devolve o registro que já existe.
+- **Auditoria:** toda chamada que pode alterar dados fica registrada no próprio banco, com a ferramenta, os parâmetros e o resultado.
 
 ## Arquitetura
 
@@ -92,11 +131,12 @@ flowchart LR
 ```
 
 - **Um único Worker** serve o app (arquivos estáticos), a API REST usada pela interface e o servidor MCP. API e MCP chamam a **mesma camada de serviços**, então as regras valem igual nos dois caminhos.
+- **Monólito modular:** cada módulo (agenda, tarefas, treinos, finanças) é dono das suas tabelas e regras, e nenhum faz SQL nas tabelas de outro. A agenda unificada, a tela Hoje e as revisões vêm de um módulo só de leitura (`today`), que chama os serviços de cada um.
 - **MCP sem SDK:** o protocolo (transporte Streamable HTTP, sem sessão, respostas JSON) foi implementado direto sobre JSON-RPC. Assim cada chamada fica leve o suficiente para o limite de CPU do plano gratuito do Workers.
 - **Dinheiro em centavos** (inteiros) em todo o banco, para não haver erro de arredondamento.
 - **Datas no fuso de São Paulo**, para o "hoje" não virar o dia seguinte depois das 21h.
 
-**Stack:** TypeScript · React 19 · Tailwind CSS 4 · Vite · Hono · Zod · Cloudflare Workers + D1.
+**Stack:** TypeScript · React 19 · Tailwind CSS 4 · Vite · Hono · Zod · Cloudflare Workers + D1 · Vitest.
 
 ## Rodar localmente
 
@@ -173,9 +213,9 @@ O link do conector aparece em **Ajustes → Conectar ao Claude** (botão copiar)
 ## Segurança e privacidade
 
 - **App:** login com uma senha única (`APP_PASSWORD`). A sessão fica num cookie `HttpOnly` assinado com HMAC e dura 180 dias.
-- **MCP:** acesso protegido por um token separado (`MCP_TOKEN`), que vai na URL do conector ou no header `Authorization: Bearer`. O link funciona como uma senha: se vazar, troque com `npx wrangler secret put MCP_TOKEN` e atualize o conector.
+- **MCP:** acesso protegido por um token separado (`MCP_TOKEN`), que vai na URL do conector ou no header `Authorization: Bearer`. O link funciona como uma senha e dá acesso a todos os módulos (agenda, tarefas, treinos e finanças): se vazar, troque com `npx wrangler secret put MCP_TOKEN` e atualize o conector.
 - **Nada pessoal no repositório:** os segredos ficam em `.dev.vars` (local) e `wrangler secret` (produção), ambos fora do git. Dados reais também ficam fora: o `.gitignore` ignora qualquer `*.local.sql`.
-- **Backup:** em **Ajustes → Baixar backup (JSON)** você exporta todos os dados.
+- **Backup:** em **Ajustes → Baixar backup (JSON)** você exporta todos os dados, de todos os módulos.
 
 ### Importar seus dados
 
@@ -195,13 +235,14 @@ npx wrangler d1 execute DB --remote --file=seed/<nome>.local.sql   # produção
 ```
 migrations/          schema do banco (D1/SQLite)
 seed/example.sql     dados fictícios para desenvolvimento
-src/shared/          tipos e utilitários (meses, datas e fusos, dinheiro) usados no front e no Worker
+src/shared/          tipos e regras puras usados no front e no Worker (meses, datas e fusos, repetição de eventos, dinheiro, tarefas, treinos)
 src/worker/          Worker: API REST (Hono), autenticação, serviços e servidor MCP
-  services/          regras de negócio (contas, gastos, parcelados, fixos, devedores, entradas, metas, saldo, resumo)
-  mcp/               protocolo MCP e definição das ferramentas
+  services/          finanças: contas, gastos, parcelados, fixos, devedores, entradas, metas, saldo, resumo
+  modules/           LifeOS: tasks, agenda, training e today (composição), cada um com service, rotas e ferramentas MCP
+  mcp/               protocolo MCP, ferramentas de finanças e utilitários das ferramentas
 src/client/          app React (PWA)
-  views/             telas (resumo, gastos, devedores, metas, ajustes)
-  forms/             formulários de lançamento e edição
+  modules/           telas e formulários de Hoje, Agenda, Tarefas e Treinos
+  views/ forms/      telas e formulários de finanças
 public/              ícones, manifest e service worker
 test/                testes (Vitest no runtime do Workers) e dados fictícios de teste
 scripts/snapshot.mjs retrato da API e do MCP para comparar antes/depois de publicar

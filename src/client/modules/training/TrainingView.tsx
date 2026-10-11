@@ -5,7 +5,7 @@ import { formatDistance, formatPlanDuration, SPORT_LABEL, SPORTS, type Sport, ty
 import { api } from "../../api";
 import { dayMonth, longDate, weekdayShort } from "../../dates";
 import { useApp, useData, useMutation } from "../../state";
-import { Badge, Button, Card, Chips, Empty, List, Progress, Section, Segmented } from "../../ui";
+import { Badge, Button, Card, Chips, Empty, List, LoadError, Progress, Section, Segmented } from "../../ui";
 import { ListSkeleton } from "../../views/ExpensesView";
 import { SportIcon, TrainingRow } from "./TrainingRow";
 
@@ -30,12 +30,12 @@ export function TrainingView() {
 }
 
 function Week() {
-  const { today, route, navigate, openSheet, toast } = useApp();
+  const { today, route, navigate, openSheet, toast, refresh } = useApp();
   const { run, busy } = useMutation();
   const dParam = route.params.get("d");
   const start = startOfWeek(dParam && isValidDate(dParam) ? dParam : today);
   const end = addDays(start, 6);
-  const sessions = useData<TrainingSession[]>(`/api/training?from=${start}&to=${end}`).data;
+  const { data: sessions, error } = useData<TrainingSession[]>(`/api/training?from=${start}&to=${end}`);
   const stats = useData<WeekStats>(`/api/training/week?date=${start}`).data;
   const go = (date: string) => navigate(`training/week?d=${date}`);
   const isThisWeek = start === startOfWeek(today);
@@ -70,7 +70,7 @@ function Week() {
       {stats && <WeekSummary stats={stats} />}
 
       {!sessions ? (
-        <ListSkeleton />
+        error ? <LoadError error={error} onRetry={refresh} /> : <ListSkeleton />
       ) : (
         <div className="space-y-4">
           {Array.from({ length: 7 }, (_, i) => addDays(start, i)).map((day) => {

@@ -7,18 +7,18 @@ import type { Today, Week } from "../../../shared/today";
 import { formatPlanDuration, isDoneStatus } from "../../../shared/training";
 import { longDate } from "../../dates";
 import { type NewTab, useApp, useData } from "../../state";
-import { Button, Card, cx, LinkButton, List, Money, Progress, Section } from "../../ui";
+import { Button, Card, cx, LinkButton, List, LoadError, Money, Progress, Section } from "../../ui";
 import { ListSkeleton } from "../../views/ExpensesView";
 import { EventRow } from "../agenda/EventRow";
 import { TaskRow } from "../tasks/TaskRow";
 import { sessionTitle, TrainingRow } from "../training/TrainingRow";
 
 export function TodayView() {
-  const { navigate, openSheet } = useApp();
-  const data = useData<Today>("/api/today").data;
+  const { navigate, openSheet, refresh } = useApp();
+  const { data, error } = useData<Today>("/api/today");
   const week = useData<Week>("/api/week").data;
   const projects = new Map((useData<Project[]>("/api/projects?all=1").data ?? []).map((p) => [p.id, p]));
-  if (!data) return <ListSkeleton />;
+  if (!data) return error ? <LoadError error={error} onRetry={refresh} /> : <ListSkeleton />;
   const { events, upcoming, tasks, training, finance } = data;
   const dueToday = tasks.overdue.length + tasks.today.length;
   const nextTraining = training.find((s) => s.status === "planned");

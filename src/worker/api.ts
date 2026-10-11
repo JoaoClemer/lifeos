@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { MONTH_RE } from "../shared/month";
-import { idParam, makeCtx, UserError } from "./lib";
+import { idParam, limitParam, makeCtx, UserError } from "./lib";
 import { agendaRoutes } from "./modules/agenda/routes";
 import { tasksRoutes } from "./modules/tasks/routes";
 import { todayRoutes } from "./modules/today/routes";
@@ -59,7 +59,7 @@ api.get("/expenses", async (c) => {
       account_id: q.account_id ? Number(q.account_id) : undefined,
       budget_id: q.budget_id ? Number(q.budget_id) : undefined,
       search: q.search || undefined,
-      limit: q.limit ? Number(q.limit) : undefined,
+      limit: limitParam(q.limit),
     }),
   );
 });

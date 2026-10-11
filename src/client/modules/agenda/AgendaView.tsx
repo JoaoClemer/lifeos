@@ -4,7 +4,7 @@ import { addDays, daysInMonth, isValidDate, startOfWeek } from "../../../shared/
 import { addMonths, monthTitle } from "../../../shared/month";
 import { dayMonth, longDate, relativeDay, weekdayShort } from "../../dates";
 import { useApp, useData } from "../../state";
-import { Badge, Button, cx, Empty, List, Section, Segmented } from "../../ui";
+import { Badge, Button, cx, Empty, List, LoadError, Section, Segmented } from "../../ui";
 import { ListSkeleton } from "../../views/ExpensesView";
 import { TaskRow } from "../tasks/TaskRow";
 import { sessionTitle, TrainingRow } from "../training/TrainingRow";
@@ -32,12 +32,12 @@ function step(mode: Mode, d: string, n: number): string {
 }
 
 export function AgendaView() {
-  const { today, route, navigate, openSheet } = useApp();
+  const { today, route, navigate, openSheet, refresh } = useApp();
   const mode = (["day", "week", "month"].includes(route.sub ?? "") ? route.sub : "week") as Mode;
   const dParam = route.params.get("d");
   const d = dParam && isValidDate(dParam) ? dParam : today;
   const [from, to] = range(mode, d);
-  const items = useData<AgendaItem[]>(`/api/agenda?from=${from}&to=${to}`).data;
+  const { data: items, error } = useData<AgendaItem[]>(`/api/agenda?from=${from}&to=${to}`);
 
   const go = (m: Mode, date: string) => navigate(`agenda/${m}?d=${date}`);
   const title = mode === "day" ? longDate(d) : mode === "week" ? `${dayMonth(from)} – ${dayMonth(to, today)}` : monthTitle(d.slice(0, 7));
@@ -71,7 +71,7 @@ export function AgendaView() {
       </div>
 
       {!items ? (
-        <ListSkeleton />
+        error ? <LoadError error={error} onRetry={refresh} /> : <ListSkeleton />
       ) : mode === "day" ? (
         <DayList items={itemsOn(items, d)} day={d} onAdd={() => newEvent(d)} />
       ) : mode === "week" ? (

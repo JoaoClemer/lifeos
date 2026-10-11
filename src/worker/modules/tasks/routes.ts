@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { idParam, makeCtx, UserError } from "../../lib";
+import { idParam, limitParam, makeCtx, UserError } from "../../lib";
 import * as tasks from "./service";
 
 export const tasksRoutes = new Hono<{ Bindings: Env }>();
@@ -19,7 +19,7 @@ tasksRoutes.get("/tasks", async (c) => {
       tag: q.tag || undefined,
       search: q.q || undefined,
       parent_id: optionalId(q.parent_id),
-      limit: q.limit ? Number(q.limit) : undefined,
+      limit: limitParam(q.limit),
     }),
   );
 });
