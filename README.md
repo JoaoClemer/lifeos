@@ -112,6 +112,24 @@ npm run dev                      # http://localhost:5173
 
 Para abrir no celular na mesma rede Wi-Fi: `http://<ip-do-computador>:5173`.
 
+## Testes
+
+```bash
+npm test
+```
+
+Os testes rodam dentro do runtime do Workers, com um D1 local criado a partir das migrations. Eles fixam as regras do financeiro (resumo, faturas, orçamentos, saldo acumulado, devedores, metas, backup e as ferramentas do MCP) com dados fictícios em [test/fixtures/finance.ts](test/fixtures/finance.ts). Se um teste de snapshot falhar, a mudança alterou um resultado: confira se era a intenção antes de atualizar o snapshot (`npx vitest run -u`).
+
+Antes de publicar uma mudança grande, dá para comparar as respostas da API e do MCP com uma cópia dos dados reais. Carregue o backup da produção no banco local, rode `npm run dev` e:
+
+```bash
+npm run snapshot -- antes     # com o código que está no ar
+npm run snapshot -- depois    # com o código novo
+diff -r backups/snapshots/antes backups/snapshots/depois
+```
+
+Os arquivos ficam em `backups/`, fora do git, porque contêm dados pessoais.
+
 ## Publicar na Cloudflare (grátis)
 
 1. Crie uma conta grátis em <https://dash.cloudflare.com/sign-up> e faça login no terminal:
@@ -177,7 +195,7 @@ npx wrangler d1 execute DB --remote --file=seed/<nome>.local.sql   # produção
 ```
 migrations/          schema do banco (D1/SQLite)
 seed/example.sql     dados fictícios para desenvolvimento
-src/shared/          tipos e utilitários (meses, dinheiro) usados no front e no Worker
+src/shared/          tipos e utilitários (meses, datas e fusos, dinheiro) usados no front e no Worker
 src/worker/          Worker: API REST (Hono), autenticação, serviços e servidor MCP
   services/          regras de negócio (contas, gastos, parcelados, fixos, devedores, entradas, metas, saldo, resumo)
   mcp/               protocolo MCP e definição das ferramentas
@@ -185,5 +203,8 @@ src/client/          app React (PWA)
   views/             telas (resumo, gastos, devedores, metas, ajustes)
   forms/             formulários de lançamento e edição
 public/              ícones, manifest e service worker
+test/                testes (Vitest no runtime do Workers) e dados fictícios de teste
+scripts/snapshot.mjs retrato da API e do MCP para comparar antes/depois de publicar
+docs/lifeos-plan.md  plano de evolução para o LifeOS (agenda, tarefas, treinos)
 docs/screenshots/    capturas usadas neste README
 ```

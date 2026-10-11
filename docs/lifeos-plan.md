@@ -545,7 +545,22 @@ O snapshot da cópia local da produção é comparado antes e depois de cada fas
 
 ---
 
-## 9. Decisões aprovadas (11/10/2026)
+## 9. Registro de execução
+
+### Fase 1 (11/10/2026): concluída
+
+Ajustes em relação ao plano:
+
+- **Pacote de testes.** O `@cloudflare/vitest-pool-workers` foi descontinuado e renomeado para `@cloudflare/vitest-plugin`. Usei a versão 1.3.6, que depende exatamente do mesmo wrangler (4.147.0) e workerd do projeto, então nada fica duplicado.
+- **Backup.** A lista de tabelas do `exportAll` continua fixa, e um teste exige que ela cubra todas as tabelas do banco. Uma lista lida do `sqlite_master` em produção poderia incluir tabelas internas do D1 (`_cf_*`) e quebrar o backup.
+- **Adiado para quando houver uso, na Fase 2:**
+  - extrair `Tool` e `tool()` para `mcp/tool.ts`;
+  - adicionar `Ctx.now`;
+  - criar `settings.timezone` (por enquanto, o fuso vem de `env.TIMEZONE`).
+- **Barra inferior do celular.** Fica igual até a Fase 2, porque ainda não existem Hoje, Agenda e Tarefas para preencher a barra nova.
+- **Verificação.** Os testes de caracterização foram rodados também contra o código da `main`. Passam todos, exceto as duas mudanças intencionais (`/api/me` e `datetime.ts`), o que confirma que descrevem o comportamento de produção.
+
+## 10. Decisões aprovadas (11/10/2026)
 
 1. **Barra inferior no celular:** Hoje · Agenda · ＋ · Tarefas · Mais (Treinos, Finanças, Ajustes).
 2. **Nome e URL:** o app passa a se chamar "LifeOS" na tela. O Worker continua `financas`, com a mesma URL, então o PWA instalado e o conector continuam funcionando.
