@@ -1,7 +1,7 @@
 {
-  "name": "Finanças",
-  "short_name": "Finanças",
-  "description": "Controle pessoal de gastos, parcelados, devedores e metas",
+  "name": "LifeOS",
+  "short_name": "LifeOS",
+  "description": "Seu sistema pessoal de organização",
   "lang": "pt-BR",
   "start_url": "/",
   "scope": "/",

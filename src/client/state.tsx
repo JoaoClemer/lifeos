@@ -54,8 +54,8 @@ function parseRoute(): Route {
   return { view: view || "summary", sub: sub || undefined, params: new URLSearchParams(query ?? "") };
 }
 
-export function AppProvider({ children }: { children: ReactNode }) {
-  const today = useMemo(() => todayIn(Intl.DateTimeFormat().resolvedOptions().timeZone), []);
+export function AppProvider({ children, timezone }: { children: ReactNode; timezone: string }) {
+  const today = useMemo(() => todayIn(timezone), [timezone]);
   const currentMonth = today.slice(0, 7);
   const [month, setMonth] = useState(currentMonth);
   const [version, setVersion] = useState(0);

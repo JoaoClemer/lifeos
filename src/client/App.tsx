@@ -1,5 +1,5 @@
-import { ChevronLeft, ChevronRight, HandCoins, LayoutDashboard, Plus, Receipt, Settings, Target, Undo2, Wallet } from "lucide-react";
-import { type FormEvent, type ReactNode, useEffect, useState } from "react";
+import { ChartNoAxesColumnIncreasing, ChevronLeft, ChevronRight, HandCoins, LayoutDashboard, Plus, Receipt, Settings, Target, Undo2 } from "lucide-react";
+import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from "react";
 import { addMonths, monthLabel, monthTitle } from "../shared/month";
 import { api, setUnauthorizedHandler } from "./api";
 import { SheetHost } from "./SheetHost";
@@ -15,18 +15,26 @@ type Auth = "checking" | "in" | "out";
 
 export default function App() {
   const [auth, setAuth] = useState<Auth>("checking");
-  useEffect(() => {
-    setUnauthorizedHandler(() => setAuth("out"));
+  // Fuso do servidor: "hoje" no app é o mesmo do MCP, mesmo com o aparelho em outro fuso
+  const [timezone, setTimezone] = useState("America/Sao_Paulo");
+  const checkSession = useCallback(() => {
     api
-      .get("/api/me")
-      .then(() => setAuth("in"))
+      .get<{ timezone: string }>("/api/me")
+      .then((me) => {
+        setTimezone(me.timezone);
+        setAuth("in");
+      })
       .catch(() => setAuth("out"));
   }, []);
+  useEffect(() => {
+    setUnauthorizedHandler(() => setAuth("out"));
+    checkSession();
+  }, [checkSession]);
 
   if (auth === "checking") return <div className="min-h-dvh bg-bg" />;
-  if (auth === "out") return <Login onLogin={() => setAuth("in")} />;
+  if (auth === "out") return <Login onLogin={checkSession} />;
   return (
-    <AppProvider>
+    <AppProvider timezone={timezone}>
       <Shell
         onLogout={() => {
           clearCache();
@@ -37,13 +45,16 @@ export default function App() {
   );
 }
 
+// Telas agrupadas por módulo do LifeOS (a barra lateral mostra o nome do grupo; null = sem título)
 const NAV = [
-  { view: "summary", label: "Resumo", icon: LayoutDashboard, title: "Resumo", month: true },
-  { view: "expenses", label: "Gastos", icon: Receipt, title: "Gastos", month: true },
-  { view: "receivables", label: "Devedores", icon: HandCoins, title: "Devedores", month: false },
-  { view: "goals", label: "Metas", icon: Target, title: "Metas e investimentos", month: true },
-  { view: "settings", label: "Ajustes", icon: Settings, title: "Ajustes", month: false },
+  { view: "summary", label: "Resumo", icon: LayoutDashboard, title: "Resumo", month: true, group: "Finanças" },
+  { view: "expenses", label: "Gastos", icon: Receipt, title: "Gastos", month: true, group: "Finanças" },
+  { view: "receivables", label: "Devedores", icon: HandCoins, title: "Devedores", month: false, group: "Finanças" },
+  { view: "goals", label: "Metas", icon: Target, title: "Metas e investimentos", month: true, group: "Finanças" },
+  { view: "settings", label: "Ajustes", icon: Settings, title: "Ajustes", month: false, group: null },
 ] as const;
+
+const NAV_GROUPS = [...new Set(NAV.map((n) => n.group))].map((group) => ({ group, items: NAV.filter((n) => n.group === group) }));
 
 function Shell({ onLogout }: { onLogout: () => void }) {
   const { route, navigate, openSheet, toasts } = useApp();
@@ -81,27 +92,32 @@ function Shell({ onLogout }: { onLogout: () => void }) {
       <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col border-r border-border bg-surface px-3 py-5 md:flex">
         <div className="mb-6 flex items-center gap-2 px-3">
           <span className="rounded-xl bg-accent p-1.5 text-accent-fg">
-            <Wallet size={18} />
+            <ChartNoAxesColumnIncreasing size={18} strokeWidth={2.5} />
           </span>
-          <span className="text-lg font-bold tracking-tight">Finanças</span>
+          <span className="text-lg font-bold tracking-tight">LifeOS</span>
         </div>
         <Button className="mb-4 w-full" onClick={() => openSheet({ kind: "new" })}>
           <Plus size={18} /> Novo lançamento
         </Button>
-        <nav className="space-y-1">
-          {NAV.map((n) => (
-            <button
-              key={n.view}
-              type="button"
-              onClick={() => navigate(n.view)}
-              aria-current={current.view === n.view ? "page" : undefined}
-              className={cx(
-                "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] font-medium transition",
-                current.view === n.view ? "bg-accent-soft text-accent" : "text-muted hover:bg-surface-2 hover:text-text",
-              )}
-            >
-              <n.icon size={19} /> {n.label}
-            </button>
+        <nav className="space-y-4">
+          {NAV_GROUPS.map(({ group, items }) => (
+            <div key={group ?? ""} className="space-y-1">
+              {group && <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-muted">{group}</p>}
+              {items.map((n) => (
+                <button
+                  key={n.view}
+                  type="button"
+                  onClick={() => navigate(n.view)}
+                  aria-current={current.view === n.view ? "page" : undefined}
+                  className={cx(
+                    "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] font-medium transition",
+                    current.view === n.view ? "bg-accent-soft text-accent" : "text-muted hover:bg-surface-2 hover:text-text",
+                  )}
+                >
+                  <n.icon size={19} /> {n.label}
+                </button>
+              ))}
+            </div>
           ))}
         </nav>
       </aside>
@@ -235,9 +251,9 @@ function Login({ onLogin }: { onLogin: () => void }) {
       <form onSubmit={submit} className="w-full max-w-sm space-y-5">
         <div className="space-y-3 text-center">
           <span className="inline-flex rounded-2xl bg-accent p-3 text-accent-fg">
-            <Wallet size={28} />
+            <ChartNoAxesColumnIncreasing size={28} strokeWidth={2.5} />
           </span>
-          <h1 className="text-2xl font-bold tracking-tight">Finanças</h1>
+          <h1 className="text-2xl font-bold tracking-tight">LifeOS</h1>
           <p className="text-sm text-muted">Digite sua senha para entrar.</p>
         </div>
         <TextInput
