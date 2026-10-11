@@ -196,6 +196,15 @@ async function listSubtasksOfOpen(ctx: Ctx, status: TaskFilter["status"]): Promi
   return (await ctx.db.prepare(sql).all<TaskRow>()).results.map(decorate);
 }
 
+/** Tarefa com o mesmo título criada há pouco (evita duplicar quando o Claude repete uma chamada). */
+export async function findRecentTask(ctx: Ctx, title: string, minutes = 10): Promise<Task | null> {
+  const row = await ctx.db
+    .prepare("SELECT id FROM tasks WHERE lower(title) = lower(?) AND parent_id IS NULL AND created_at >= datetime('now', ?) ORDER BY id DESC LIMIT 1")
+    .bind(title.trim(), `-${minutes} minutes`)
+    .first<{ id: number }>();
+  return row ? getTask(ctx, row.id) : null;
+}
+
 /** Etiquetas já usadas, das mais frequentes para as menos. */
 export async function listTags(ctx: Ctx): Promise<string[]> {
   const rows = await ctx.db

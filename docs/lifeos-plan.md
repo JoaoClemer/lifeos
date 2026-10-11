@@ -586,6 +586,15 @@ Ajustes em relação ao plano:
 - **`/api/week`.** Junta compromissos da semana, tarefas concluídas (pela data de conclusão), tarefas com prazo na semana, atrasadas e os indicadores de treino. A mesma função vai servir à revisão semanal do MCP.
 - **Tela Hoje.** Tem atalhos (Tarefa, Evento, Treino, Gasto), quatro indicadores clicáveis e as seções do dia, de finanças e da semana.
 
+### Fase 5 (11/10/2026): concluída
+
+- **Ferramentas novas:** 17, além das 19 de finanças. Nomes e parâmetros em português, cada módulo com o seu `tools.ts`, e `mcp/tool.ts` com a definição comum.
+- **Confirmação imposta pelo servidor.** `remover_tarefa`, `cancelar_evento` e `remover_treino` só excluem com `confirmar: true`. Sem isso, devolvem uma prévia sem erro, para o Claude perguntar ao usuário.
+- **Deduplicação.** `criar_tarefa`, `criar_evento` e `planejar_treino` devolvem o registro igual criado nos últimos 10 minutos, em vez de duplicar. `concluir_tarefa` e `registrar_treino` são idempotentes por natureza (atualizam o registro).
+- **Auditoria.** Toda chamada que pode alterar dados, inclusive as de finanças, vai para `activity_log` com ferramenta, parâmetros, se deu certo e o começo da resposta. Fica só no banco, nada vai para os logs do Worker. Consultas não são auditadas.
+- **Nome do servidor.** `serverInfo` passou a "lifeos". A URL e o token não mudam, então o conector continua funcionando.
+- **Datas e horários.** Aceitam "hoje", "amanhã", "DD/MM", "9h" e "14h30", para o Claude não precisar calcular.
+
 ## 10. Decisões aprovadas (11/10/2026)
 
 1. **Barra inferior no celular:** Hoje · Agenda · ＋ · Tarefas · Mais (Treinos, Finanças, Ajustes).

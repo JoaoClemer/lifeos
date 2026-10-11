@@ -89,6 +89,15 @@ export async function listSessions(ctx: Ctx, from: string, to: string, sport?: S
   return rows.results.map(decorate);
 }
 
+/** Treino planejado igual (modalidade, dia e horário) criado há pouco (evita duplicar quando o Claude repete uma chamada). */
+export async function findRecentSession(ctx: Ctx, sport: Sport, date: string, time: string | null, minutes = 10): Promise<TrainingSession | null> {
+  const row = await ctx.db
+    .prepare(`SELECT ${COLS} FROM training_sessions WHERE sport = ? AND date = ? AND COALESCE(time, '') = ? AND created_at >= datetime('now', ?) ORDER BY id DESC LIMIT 1`)
+    .bind(sport, date, time ?? "", `-${minutes} minutes`)
+    .first<Row>();
+  return row ? decorate(row) : null;
+}
+
 /** Treinos realizados (total ou parcialmente), do mais recente para o mais antigo. */
 export async function listHistory(ctx: Ctx, opts: { sport?: Sport; before?: string; limit?: number } = {}): Promise<TrainingSession[]> {
   const where = ["status IN ('done', 'partial')"];

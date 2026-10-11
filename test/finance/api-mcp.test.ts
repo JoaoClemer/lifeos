@@ -43,7 +43,7 @@ describe("MCP", () => {
 
   it("aceita o token na URL e no header Bearer", async () => {
     const byUrl = await app.request(`/mcp/${env.MCP_TOKEN}`, rpc("initialize", { protocolVersion: "2025-06-18" }), env);
-    expect(await byUrl.json()).toMatchObject({ result: { protocolVersion: "2025-06-18", serverInfo: { name: "financas" } } });
+    expect(await byUrl.json()).toMatchObject({ result: { protocolVersion: "2025-06-18", serverInfo: { name: "lifeos" } } });
     const init = rpc("ping");
     const byHeader = await app.request("/mcp", { ...init, headers: { ...init.headers, Authorization: `Bearer ${env.MCP_TOKEN}` } }, env);
     expect(await byHeader.json()).toEqual({ jsonrpc: "2.0", id: 1, result: {} });
@@ -52,7 +52,9 @@ describe("MCP", () => {
   it("as ferramentas financeiras (nomes, descrições e parâmetros) não mudam", async () => {
     const res = await app.request(`/mcp/${env.MCP_TOKEN}`, rpc("tools/list"), env);
     const { result } = (await res.json()) as { result: { tools: { name: string }[] } };
-    expect(result.tools.map((t) => t.name)).toEqual([
+    // As do LifeOS vêm depois; as 19 primeiras são as de finanças, iguais ao snapshot gravado antes do LifeOS
+    const finance = result.tools.slice(0, 19);
+    expect(finance.map((t) => t.name)).toEqual([
       "resumo_mes",
       "listar_cadastros",
       "lancar_despesa",
@@ -73,7 +75,7 @@ describe("MCP", () => {
       "atualizar_saldo_meta",
       "cadastrar_conta",
     ]);
-    expect(result.tools).toMatchSnapshot();
+    expect(finance).toMatchSnapshot();
   });
 
   it("resumo_mes descreve o mês como antes", async () => {
