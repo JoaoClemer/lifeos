@@ -17,6 +17,8 @@ export interface Account {
   type: AccountType;
   closing_day: number | null;
   due_day: number | null;
+  /** Dia em que você paga a fatura; null = no vencimento. */
+  payment_day: number | null;
   color: string | null;
   archived: number;
 }
@@ -135,6 +137,7 @@ export interface AccountTotal {
   name: string;
   type: AccountType | null;
   due_day: number | null;
+  payment_day: number | null;
   total_cents: number;
 }
 

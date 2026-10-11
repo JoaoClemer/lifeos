@@ -89,7 +89,17 @@ export function SummaryView() {
                   </span>
                 }
                 title={a.name}
-                subtitle={a.type === "credit" ? (a.due_day ? `Fatura vence dia ${a.due_day}` : "Fatura") : a.type ? "Gastos no mês" : "Lançamentos sem conta"}
+                subtitle={
+                  a.type === "credit"
+                    ? a.due_day
+                      ? a.payment_day && a.payment_day > a.due_day
+                        ? `Paga dia ${a.payment_day} · vence dia ${a.due_day} do mês seguinte`
+                        : `Fatura vence dia ${a.due_day}`
+                      : "Fatura"
+                    : a.type
+                      ? "Gastos no mês"
+                      : "Lançamentos sem conta"
+                }
                 right={<Money cents={a.total_cents} className="font-semibold" />}
                 onClick={a.account_id ? () => navigate(`expenses/one-off?account=${a.account_id}`) : undefined}
               />

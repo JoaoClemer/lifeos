@@ -1,6 +1,6 @@
-import { ChevronLeft, ChevronRight, HandCoins, LayoutDashboard, Plus, Receipt, Settings, Target, Wallet } from "lucide-react";
+import { ChevronLeft, ChevronRight, HandCoins, LayoutDashboard, Plus, Receipt, Settings, Target, Undo2, Wallet } from "lucide-react";
 import { type FormEvent, type ReactNode, useEffect, useState } from "react";
-import { addMonths, monthTitle } from "../shared/month";
+import { addMonths, monthLabel, monthTitle } from "../shared/month";
 import { api, setUnauthorizedHandler } from "./api";
 import { SheetHost } from "./SheetHost";
 import { AppProvider, clearCache, useApp } from "./state";
@@ -188,18 +188,25 @@ function MonthSwitcher() {
       <button type="button" aria-label="Mês anterior" onClick={() => setMonth(addMonths(month, -1))} className="rounded-full p-2 text-muted hover:bg-surface-2">
         <ChevronLeft size={20} />
       </button>
-      <button
-        type="button"
-        onClick={() => setMonth(currentMonth)}
-        className="min-w-[9.5rem] text-center text-[15px] font-semibold"
-        title={isCurrent ? undefined : "Voltar para o mês atual"}
-      >
+      <span className="min-w-[9.5rem] text-center text-[15px] font-semibold">
         {monthTitle(month)}
-        {!isCurrent && <span className="ml-1.5 rounded-md bg-accent-soft px-1.5 py-0.5 align-middle text-[10px] font-bold uppercase text-accent">hoje</span>}
-      </button>
+        {/* Etiqueta só no mês atual */}
+        {isCurrent && <span className="ml-1.5 rounded-md bg-accent-soft px-1.5 py-0.5 align-middle text-[10px] font-bold uppercase text-accent">atual</span>}
+      </span>
       <button type="button" aria-label="Próximo mês" onClick={() => setMonth(addMonths(month, 1))} className="rounded-full p-2 text-muted hover:bg-surface-2">
         <ChevronRight size={20} />
       </button>
+      {/* Em outro mês: atalho para voltar ao mês atual */}
+      {!isCurrent && (
+        <button
+          type="button"
+          onClick={() => setMonth(currentMonth)}
+          className="ml-0.5 inline-flex h-7 items-center gap-1 rounded-full border border-border px-2 text-xs font-semibold text-accent hover:bg-accent-soft"
+          title="Voltar para o mês atual"
+        >
+          <Undo2 size={13} /> {monthLabel(currentMonth, true).split("/")[0]}
+        </button>
+      )}
     </div>
   );
 }

@@ -97,7 +97,10 @@ export const TOOLS: Tool<z.ZodObject>[] = [
       if (s.balance) lines.push(balanceLine(s.balance, m));
       if (s.by_account.length) {
         lines.push("", "Por cartão/conta (o que cai em cada um, incluindo a parte de devedores):");
-        for (const a of s.by_account) lines.push(`• ${a.name}${a.due_day ? ` (vence dia ${a.due_day})` : ""}: ${brl(a.total_cents)}`);
+        for (const a of s.by_account)
+          lines.push(
+            `• ${a.name}${a.due_day ? ` (vence dia ${a.due_day}${a.payment_day && a.payment_day > a.due_day ? ` do mês seguinte, pago dia ${a.payment_day}` : ""})` : ""}: ${brl(a.total_cents)}`,
+          );
       }
       if (s.budgets.length) {
         lines.push("", "Orçamentos (fixos a descontar):");
@@ -135,7 +138,9 @@ export const TOOLS: Tool<z.ZodObject>[] = [
       const lines = [`Hoje: ${formatDateBR(ctx.today)} (mês atual ${ctx.month})`, "", "Cartões/contas:"];
       for (const a of accs)
         lines.push(
-          `• [${a.id}] ${a.name} (${a.type}${a.closing_day ? `, fecha dia ${a.closing_day}` : ""}${a.due_day ? `, vence dia ${a.due_day}` : ""})${
+          `• [${a.id}] ${a.name} (${a.type}${a.closing_day ? `, fecha dia ${a.closing_day}` : ""}${a.due_day ? `, vence dia ${a.due_day}` : ""}${
+            a.payment_day ? `, paga dia ${a.payment_day}` : ""
+          })${
             settings.default_account_id === a.id ? " ← padrão" : ""
           }`,
         );
@@ -753,6 +758,13 @@ export const TOOLS: Tool<z.ZodObject>[] = [
       tipo: z.enum(["credit", "debit", "pix", "cash", "voucher", "other"]).describe("credit=crédito, voucher=VR/VA"),
       dia_fechamento: z.number().int().min(1).max(31).optional(),
       dia_vencimento: z.number().int().min(1).max(31).optional(),
+      dia_pagamento: z
+        .number()
+        .int()
+        .min(1)
+        .max(31)
+        .optional()
+        .describe("Dia em que o usuário paga a fatura, se diferente do vencimento (ex.: vence 1 e paga 25, quando recebe o salário)"),
       padrao: z.boolean().optional().describe("Usar como conta padrão quando nenhuma for informada"),
     }),
     async run(a, ctx) {
@@ -761,6 +773,7 @@ export const TOOLS: Tool<z.ZodObject>[] = [
         type: a.tipo,
         closing_day: a.dia_fechamento ?? null,
         due_day: a.dia_vencimento ?? null,
+        payment_day: a.dia_pagamento ?? null,
       });
       if (a.padrao) await summary.updateSettings(ctx, { default_account_id: acc.id });
       return `✅ Conta cadastrada [id ${acc.id}]: ${acc.name}${a.padrao ? " (padrão)" : ""}.`;

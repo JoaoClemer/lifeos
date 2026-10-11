@@ -57,7 +57,14 @@ export function SettingsView({ onLogout }: { onLogout: () => void }) {
                 subtitle={
                   <>
                     <span>
-                      {[ACCOUNT_TYPE_LABEL[a.type], a.closing_day && `fecha dia ${a.closing_day}`, a.due_day && `vence dia ${a.due_day}`].filter(Boolean).join(" · ")}
+                      {[
+                        ACCOUNT_TYPE_LABEL[a.type],
+                        a.closing_day && `fecha dia ${a.closing_day}`,
+                        a.due_day && `vence dia ${a.due_day}`,
+                        a.payment_day && `paga dia ${a.payment_day}`,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
                     </span>
                     {a.type === "credit" && !a.closing_day && <span className="text-warn">defina o fechamento</span>}
                   </>

@@ -31,12 +31,15 @@ export interface CardCycle {
   type: string;
   closing_day: number | null;
   due_day: number | null;
+  /** Dia em que você paga a fatura (se diferente do vencimento). */
+  payment_day?: number | null;
 }
 
 /**
- * Mês de referência de uma compra: para cartão de crédito com dia de fechamento,
- * é o mês em que a fatura VENCE. Compras no dia do fechamento ou depois vão para a próxima fatura.
- * Para as demais formas de pagamento, é o próprio mês da data.
+ * Mês de referência de uma compra = mês em que o dinheiro sai da conta.
+ * Cartão de crédito com dia de fechamento: compras no dia do fechamento ou depois vão para a próxima fatura;
+ * a fatura conta no mês em que vence ou, se você paga num dia do mês anterior (ex.: vence dia 1 e paga dia 25),
+ * no mês em que paga. Demais formas de pagamento: o próprio mês da data.
  */
 export function referenceMonth(date: string, account?: CardCycle | null): string {
   let month = monthOf(date);
@@ -44,6 +47,8 @@ export function referenceMonth(date: string, account?: CardCycle | null): string
   const day = Number(date.slice(8, 10));
   if (day >= account.closing_day) month = addMonths(month, 1); // mês em que a fatura fecha
   if (account.due_day && account.due_day <= account.closing_day) month = addMonths(month, 1); // vence no mês seguinte ao fechamento
+  // Paga antes do vencimento, num dia "maior" (ex.: vence 1, paga 25): a fatura sai no mês anterior ao vencimento
+  if (account.due_day && account.payment_day && account.payment_day > account.due_day) month = addMonths(month, -1);
   return month;
 }
 

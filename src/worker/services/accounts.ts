@@ -9,12 +9,16 @@ export const AccountInput = z.object({
   type: z.enum(["credit", "debit", "pix", "cash", "voucher", "other"]).default("credit"),
   closing_day: day.optional(),
   due_day: day.optional(),
+  payment_day: day.optional(),
   color: z.string().nullable().optional(),
 });
-export const AccountPatch = AccountInput.partial().extend({ archived: z.boolean().optional() });
+// Sem o default de `type`: uma edição parcial não pode trocar o tipo da conta sem querer
+export const AccountPatch = AccountInput.extend({ type: z.enum(["credit", "debit", "pix", "cash", "voucher", "other"]) })
+  .partial()
+  .extend({ archived: z.boolean().optional() });
 
 export async function listAccounts(ctx: Ctx, includeArchived = false): Promise<Account[]> {
-  const sql = `SELECT id, name, type, closing_day, due_day, color, archived FROM accounts
+  const sql = `SELECT id, name, type, closing_day, due_day, payment_day, color, archived FROM accounts
                ${includeArchived ? "" : "WHERE archived = 0"} ORDER BY archived, name COLLATE NOCASE`;
   return (await ctx.db.prepare(sql).all<Account>()).results;
 }
@@ -27,17 +31,17 @@ export async function createAccount(ctx: Ctx, input: z.input<typeof AccountInput
   const a = AccountInput.parse(input);
   const row = await ctx.db
     .prepare(
-      `INSERT INTO accounts (name, type, closing_day, due_day, color) VALUES (?, ?, ?, ?, ?)
-       RETURNING id, name, type, closing_day, due_day, color, archived`,
+      `INSERT INTO accounts (name, type, closing_day, due_day, payment_day, color) VALUES (?, ?, ?, ?, ?, ?)
+       RETURNING id, name, type, closing_day, due_day, payment_day, color, archived`,
     )
-    .bind(a.name, a.type, nn(a.closing_day), nn(a.due_day), nn(a.color))
+    .bind(a.name, a.type, nn(a.closing_day), nn(a.due_day), nn(a.payment_day), nn(a.color))
     .first<Account>();
   return row!;
 }
 
 export async function updateAccount(ctx: Ctx, id: number, patch: z.input<typeof AccountPatch>): Promise<Account> {
   const p = AccountPatch.parse(patch);
-  await updateRow(ctx.db, "accounts", id, p, ["name", "type", "closing_day", "due_day", "color", "archived"]);
+  await updateRow(ctx.db, "accounts", id, p, ["name", "type", "closing_day", "due_day", "payment_day", "color", "archived"]);
   return getAccount(ctx, id);
 }
 

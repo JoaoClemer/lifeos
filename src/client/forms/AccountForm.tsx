@@ -14,12 +14,19 @@ export function AccountForm({ item, onDone }: { item?: Account; onDone: () => vo
   const [type, setType] = useState<AccountType>(item?.type ?? "credit");
   const [closing, setClosing] = useState<number | null>(item?.closing_day ?? null);
   const [due, setDue] = useState<number | null>(item?.due_day ?? null);
+  const [payDay, setPayDay] = useState<number | null>(item?.payment_day ?? null);
   const isDefault = !!item && settings?.default_account_id === item.id;
   const [makeDefault, setMakeDefault] = useState<boolean | null>(null);
 
   async function save() {
     if (!name.trim()) return;
-    const body = { name, type, closing_day: type === "credit" ? closing : null, due_day: type === "credit" ? due : null };
+    const body = {
+      name,
+      type,
+      closing_day: type === "credit" ? closing : null,
+      due_day: type === "credit" ? due : null,
+      payment_day: type === "credit" ? payDay : null,
+    };
     const ok = await run(async () => {
       const acc = item ? await api.patch<Account>(`/api/accounts/${item.id}`, body) : await api.post<Account>("/api/accounts", body);
       if (makeDefault === true) await api.put("/api/settings", { default_account_id: acc.id });
@@ -55,6 +62,17 @@ export function AccountForm({ item, onDone }: { item?: Account; onDone: () => vo
           <p className="text-xs text-muted">
             Com o fechamento, compras feitas a partir desse dia vão automaticamente para a fatura do mês seguinte.
           </p>
+          <Field
+            label="Dia em que você paga a fatura (opcional)"
+            htmlFor="acc-pay"
+            hint={
+              payDay && due && payDay > due
+                ? `A fatura que vence dia ${due} conta no mês anterior, quando você paga (dia ${payDay}).`
+                : "Ex.: vence dia 1 mas você paga dia 25, quando recebe. Vazio = conta no mês do vencimento."
+            }
+          >
+            <DayInput id="acc-pay" value={payDay} onChange={setPayDay} placeholder="Ex.: 25" />
+          </Field>
         </>
       )}
       <Toggle checked={makeDefault ?? isDefault} onChange={setMakeDefault} label="Conta padrão" description="Usada quando você não escolhe uma" />

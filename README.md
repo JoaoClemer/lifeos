@@ -28,11 +28,11 @@ Ele nasceu para substituir uma planilha de controle mensal, com abas para compra
 | **Devedores** | Quem te deve, agrupado por pessoa, com “Recebi tudo”. Aceita **devedor parcelado**: as próximas parcelas ficam separadas até vencerem |
 | **Metas** | Saldo investido, valor da meta, aporte mensal com check, previsão de quando atinge e quanto guardar por mês para cumprir o prazo |
 | **Entradas** | Dinheiro além do salário fixo (13º, bônus, PLR, freela…), somado à renda do mês em que entra |
-| **Ajustes** | Cartões (dia de fechamento e vencimento), salário líquido fixo, link do conector do Claude e backup em JSON |
+| **Ajustes** | Cartões (dia de fechamento, vencimento e em que você paga), salário líquido fixo, link do conector do Claude e backup em JSON |
 
 ### Como as regras funcionam
 
-- **Fatura do cartão:** com o dia de fechamento cadastrado, uma compra feita no dia do fechamento ou depois vai sozinha para a fatura seguinte. O "mês" de um gasto no crédito é o mês em que a fatura vence.
+- **Mês = quando o dinheiro sai da conta.** Com o dia de fechamento cadastrado, uma compra feita no dia do fechamento ou depois vai sozinha para a fatura seguinte. A fatura conta no mês em que vence. Se você informar o **dia em que paga** (ex.: vence dia 1 e você paga dia 25, quando recebe o salário), ela conta no mês em que você paga. Assim o salário de outubro, a fatura paga em outubro e as contas de outubro aparecem juntos.
 - **Orçamentos** (os “fixos a descontar”): você reserva um valor por mês, por exemplo R$ 600 de almoço, e lança os gastos dentro dele. O app mostra quanto falta. Esses gastos não somam de novo no total do mês; só entra o que passar do valor reservado.
 - **Dividir com alguém:** ao lançar um gasto, sua parte fica nos seus gastos e a parte de cada pessoa vira um **devedor**, no mesmo cartão. Assim a fatura bate com o valor cobrado e você sabe quanto vai receber.
 - **Devedor parcelado:** quando você passa no seu cartão uma compra parcelada de outra pessoa, cada parcela vira um devedor no mês da fatura dela. Ela só passa a contar como pendente quando o mês chega, e entra na fatura daquele mês. “Recebi tudo” marca só o que já venceu.

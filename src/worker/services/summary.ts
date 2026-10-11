@@ -106,6 +106,7 @@ export async function getSummary(ctx: Ctx, month: string): Promise<Summary> {
         name: a?.name ?? "Sem conta definida",
         type: (a?.type as AccountType) ?? null,
         due_day: a?.due_day ?? null,
+        payment_day: a?.payment_day ?? null,
         total_cents: total,
       };
     })
