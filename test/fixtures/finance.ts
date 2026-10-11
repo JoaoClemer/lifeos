@@ -5,8 +5,8 @@ import type { Ctx } from "../../src/worker/lib";
 export const TODAY = "2026-10-15";
 export const MONTH = "2026-10";
 
-export function testCtx(db: D1Database, today = TODAY): Ctx {
-  return { db, today, month: today.slice(0, 7), timezone: "America/Sao_Paulo" };
+export function testCtx(db: D1Database, today = TODAY, time = "10:00"): Ctx {
+  return { db, today, month: today.slice(0, 7), timezone: "America/Sao_Paulo", now: `${today}T${time}`, source: "app" };
 }
 
 /** Tabelas do financeiro, das dependentes para as independentes (ordem segura para apagar). */

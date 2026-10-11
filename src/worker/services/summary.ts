@@ -156,11 +156,15 @@ export async function getSummary(ctx: Ctx, month: string): Promise<Summary> {
 
 /** Backup completo em JSON. */
 export async function exportAll(ctx: Ctx) {
-  const tables = ["accounts", "recurring", "recurring_months", "installments", "expenses", "receivables", "incomes", "month_balances", "goals", "goal_entries", "settings"];
+  const tables = [
+    "accounts", "recurring", "recurring_months", "installments", "expenses", "receivables", "incomes", "month_balances", "goals", "goal_entries", "settings",
+    // LifeOS
+    "projects", "tasks", "events", "activity_log",
+  ];
   const results = await ctx.db.batch(tables.map((t) => ctx.db.prepare(`SELECT * FROM ${t}`)));
   return {
     exported_at: new Date().toISOString(),
-    version: 3,
+    version: 4,
     tables: Object.fromEntries(tables.map((t, i) => [t, results[i].results])),
   };
 }

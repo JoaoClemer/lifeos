@@ -44,7 +44,7 @@ async function callTool(params: Record<string, unknown> | undefined, env: Env) {
   if (!tool) return { content: [{ type: "text", text: `Ferramenta desconhecida: ${name}` }], isError: true };
   try {
     const args = tool.schema.parse(params?.arguments ?? {});
-    const text = await tool.run(args, makeCtx(env));
+    const text = await tool.run(args, makeCtx(env, "mcp"));
     return { content: [{ type: "text", text }] };
   } catch (e) {
     let text: string;

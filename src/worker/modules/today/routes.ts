@@ -1,0 +1,12 @@
+import { Hono } from "hono";
+import { makeCtx } from "../../lib";
+import { getAgenda, getToday } from "./service";
+
+export const todayRoutes = new Hono<{ Bindings: Env }>();
+const ctxOf = (c: { env: Env }) => makeCtx(c.env);
+
+todayRoutes.get("/agenda", async (c) => {
+  const ctx = ctxOf(c);
+  return c.json(await getAgenda(ctx, c.req.query("from") ?? ctx.today, c.req.query("to") ?? ctx.today));
+});
+todayRoutes.get("/today", async (c) => c.json(await getToday(ctxOf(c))));
