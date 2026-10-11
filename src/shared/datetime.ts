@@ -100,3 +100,35 @@ export function dayOfWeek(date: string): number {
 export function startOfWeek(date: string): string {
   return addDays(date, -((dayOfWeek(date) + 6) % 7));
 }
+
+/** Dias de `from` até `to` (to - from). */
+export function diffDays(from: string, to: string): number {
+  const [fy, fm, fd] = from.split("-").map(Number);
+  const [ty, tm, td] = to.split("-").map(Number);
+  return Math.round((Date.UTC(ty, tm - 1, td) - Date.UTC(fy, fm - 1, fd)) / DAY_MS);
+}
+
+/** Quantos dias tem o mês ('YYYY-MM'). */
+export function daysInMonth(month: string): number {
+  const [y, m] = month.split("-").map(Number);
+  return new Date(Date.UTC(y, m, 0)).getUTCDate();
+}
+
+/** Soma minutos a uma data e hora local (no relógio, sem considerar mudanças de fuso). */
+export function addMinutes(local: string, minutes: number): string {
+  const [date, time] = local.split("T");
+  const [y, m, d] = date.split("-").map(Number);
+  const [h, min] = time.split(":").map(Number);
+  return new Date(Date.UTC(y, m - 1, d, h, min) + minutes * 60_000).toISOString().slice(0, 16);
+}
+
+/** Minutos entre duas datas e horas locais (no relógio). */
+export function diffMinutes(from: string, to: string): number {
+  const ms = (local: string) => {
+    const [date, time] = local.split("T");
+    const [y, m, d] = date.split("-").map(Number);
+    const [h, min] = time.split(":").map(Number);
+    return Date.UTC(y, m - 1, d, h, min);
+  };
+  return Math.round((ms(to) - ms(from)) / 60_000);
+}

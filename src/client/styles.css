@@ -16,6 +16,13 @@
   --warn-soft: #fff4e0;
   --success: #1c8a4c;
   --success-soft: #e5f5ec;
+  /* Cores de evento da agenda */
+  --ev-teal: #0d7a6f;
+  --ev-blue: #2f6fd0;
+  --ev-violet: #7a4fd0;
+  --ev-amber: #c27a00;
+  --ev-rose: #d03a6a;
+  --ev-slate: #5b6576;
   color-scheme: light;
 }
 
@@ -36,6 +43,12 @@
     --warn-soft: #33250c;
     --success: #4cc584;
     --success-soft: #11291b;
+    --ev-teal: #3cc7b4;
+    --ev-blue: #6aa2ff;
+    --ev-violet: #a98bff;
+    --ev-amber: #f0b252;
+    --ev-rose: #ff7aa2;
+    --ev-slate: #9aa5b5;
     color-scheme: dark;
   }
 }

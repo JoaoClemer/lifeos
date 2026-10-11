@@ -560,6 +560,16 @@ Ajustes em relação ao plano:
 - **Barra inferior do celular.** Fica igual até a Fase 2, porque ainda não existem Hoje, Agenda e Tarefas para preencher a barra nova.
 - **Verificação.** Os testes de caracterização foram rodados também contra o código da `main`. Passam todos, exceto as duas mudanças intencionais (`/api/me` e `datetime.ts`), o que confirma que descrevem o comportamento de produção.
 
+### Fase 2 (11/10/2026): concluída
+
+Ajustes em relação ao plano:
+
+- **Numeração das migrations.** O histórico (`activity_log`) entrou já nesta fase como `0007`, porque concluir e reabrir tarefas precisa dele. Treinos fica com a `0008`.
+- **`Ctx` ganhou `now` e `source`.** `now` é a hora local; `source` indica se a ação veio do app ou do MCP e vai para o histórico.
+- **`/api/today` já existe.** A composição da tela Hoje (agenda e tarefas) foi para o servidor nesta fase. As Fases 3 e 4 só acrescentam treino, finanças e a semana.
+- **Visões da agenda.** Semana e dia são listas por dia, e o mês é uma grade. Não fiz grade de horários (estilo Google Calendar), por ser mais pesada no celular. Fica como evolução se fizer falta.
+- **Tarefas recorrentes e lembretes** continuam fora do MVP.
+
 ## 10. Decisões aprovadas (11/10/2026)
 
 1. **Barra inferior no celular:** Hoje · Agenda · ＋ · Tarefas · Mais (Treinos, Finanças, Ajustes).

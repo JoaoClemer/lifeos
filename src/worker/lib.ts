@@ -1,4 +1,5 @@
-import { todayIn, monthOf } from "../shared/month";
+import { nowIn } from "../shared/datetime";
+import { monthOf } from "../shared/month";
 
 /** Erro "esperado" (validação, não encontrado...). Vira 400 na API e isError no MCP. */
 export class UserError extends Error {
@@ -16,12 +17,24 @@ export interface Ctx {
   month: string;
   /** Fuso IANA do app (ex.: America/Sao_Paulo). */
   timezone: string;
+  /** Data e hora local agora ('YYYY-MM-DDTHH:MM'). */
+  now: string;
+  /** Quem fez a ação: o app (API) ou o Claude (MCP). Vai para o histórico. */
+  source: "app" | "mcp";
 }
 
-export function makeCtx(env: Env): Ctx {
+export function makeCtx(env: Env, source: Ctx["source"] = "app"): Ctx {
   const timezone = env.TIMEZONE || "America/Sao_Paulo";
-  const today = todayIn(timezone);
-  return { db: env.DB, today, month: monthOf(today), timezone };
+  const now = nowIn(timezone);
+  const today = now.slice(0, 10);
+  return { db: env.DB, today, month: monthOf(today), timezone, now, source };
+}
+
+/** Id numérico vindo da URL. */
+export function idParam(v: string): number {
+  const n = Number(v);
+  if (!Number.isInteger(n) || n <= 0) throw new UserError("id inválido");
+  return n;
 }
 
 /** D1 não aceita `undefined` em bind. */

@@ -1,6 +1,9 @@
 import { Hono } from "hono";
 import { MONTH_RE } from "../shared/month";
-import { makeCtx, UserError } from "./lib";
+import { idParam, makeCtx, UserError } from "./lib";
+import { agendaRoutes } from "./modules/agenda/routes";
+import { tasksRoutes } from "./modules/tasks/routes";
+import { todayRoutes } from "./modules/today/routes";
 import * as accounts from "./services/accounts";
 import * as balance from "./services/balance";
 import * as expenses from "./services/expenses";
@@ -15,11 +18,6 @@ type App = { Bindings: Env };
 export const api = new Hono<App>();
 
 const ctxOf = (c: { env: Env }) => makeCtx(c.env);
-const idParam = (v: string) => {
-  const n = Number(v);
-  if (!Number.isInteger(n) || n <= 0) throw new UserError("id inválido");
-  return n;
-};
 const monthQuery = (v: string | undefined, fallback: string) => {
   if (!v) return fallback;
   if (!MONTH_RE.test(v)) throw new UserError("mês inválido (use YYYY-MM)");
@@ -162,3 +160,8 @@ api.delete("/goal-entries/:id", async (c) => {
   await goals.deleteGoalEntry(ctxOf(c), idParam(c.req.param("id")));
   return c.json({ ok: true });
 });
+
+// ---- Módulos do LifeOS ----
+api.route("/", tasksRoutes);
+api.route("/", agendaRoutes);
+api.route("/", todayRoutes);

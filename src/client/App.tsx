@@ -1,9 +1,13 @@
-import { ChartNoAxesColumnIncreasing, ChevronLeft, ChevronRight, HandCoins, LayoutDashboard, Plus, Receipt, Settings, Target, Undo2 } from "lucide-react";
+import { ChartNoAxesColumnIncreasing, ChevronLeft, ChevronRight, Ellipsis, Plus, Settings, Undo2 } from "lucide-react";
 import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from "react";
 import { addMonths, monthLabel, monthTitle } from "../shared/month";
 import { api, setUnauthorizedHandler } from "./api";
+import { AgendaView } from "./modules/agenda/AgendaView";
+import { TasksView } from "./modules/tasks/TasksView";
+import { TodayView } from "./modules/today/TodayView";
+import { MOBILE_TABS, NAV, NAV_SECTIONS } from "./nav";
 import { SheetHost } from "./SheetHost";
-import { AppProvider, clearCache, useApp } from "./state";
+import { AppProvider, clearCache, type NewTab, useApp } from "./state";
 import { Button, cx, TextInput } from "./ui";
 import { ExpensesView } from "./views/ExpensesView";
 import { GoalsView } from "./views/GoalsView";
@@ -45,31 +49,39 @@ export default function App() {
   );
 }
 
-// Telas agrupadas por módulo do LifeOS (a barra lateral mostra o nome do grupo; null = sem título)
-const NAV = [
-  { view: "summary", label: "Resumo", icon: LayoutDashboard, title: "Resumo", month: true, group: "Finanças" },
-  { view: "expenses", label: "Gastos", icon: Receipt, title: "Gastos", month: true, group: "Finanças" },
-  { view: "receivables", label: "Devedores", icon: HandCoins, title: "Devedores", month: false, group: "Finanças" },
-  { view: "goals", label: "Metas", icon: Target, title: "Metas e investimentos", month: true, group: "Finanças" },
-  { view: "settings", label: "Ajustes", icon: Settings, title: "Ajustes", month: false, group: null },
-] as const;
-
-const NAV_GROUPS = [...new Set(NAV.map((n) => n.group))].map((group) => ({ group, items: NAV.filter((n) => n.group === group) }));
-
 function Shell({ onLogout }: { onLogout: () => void }) {
   const { route, navigate, openSheet, toasts } = useApp();
   const current = NAV.find((n) => n.view === route.view) ?? NAV[0];
 
-  // Atalho do app instalado: /?novo=gasto abre direto o lançamento
+  // Atalhos do app instalado: /?novo=gasto e /?novo=tarefa abrem direto o lançamento
   useEffect(() => {
-    if (new URLSearchParams(location.search).has("novo")) {
-      openSheet({ kind: "new" });
+    const novo = new URLSearchParams(location.search).get("novo");
+    if (novo !== null) {
+      openSheet({ kind: "new", tab: novo === "tarefa" ? "task" : novo === "evento" ? "event" : "expense" });
       history.replaceState(null, "", location.pathname + location.hash);
     }
   }, [openSheet]);
 
+  // O "+" abre na aba da tela atual (finanças continua abrindo em "Gasto")
+  const newTab: NewTab = current.view === "tasks" ? "task" : current.view === "agenda" ? "event" : "expense";
+  const openNew = () => openSheet({ kind: "new", tab: newTab });
+  const inMore = !(MOBILE_TABS as readonly string[]).includes(current.view);
+  const TasksIcon = NAV[2].icon;
+
   let page: ReactNode;
   switch (current.view) {
+    case "today":
+      page = <TodayView />;
+      break;
+    case "agenda":
+      page = <AgendaView />;
+      break;
+    case "tasks":
+      page = <TasksView />;
+      break;
+    case "summary":
+      page = <SummaryView />;
+      break;
     case "expenses":
       page = <ExpensesView />;
       break;
@@ -83,7 +95,7 @@ function Shell({ onLogout }: { onLogout: () => void }) {
       page = <SettingsView onLogout={onLogout} />;
       break;
     default:
-      page = <SummaryView />;
+      page = <TodayView />;
   }
 
   return (
@@ -96,13 +108,13 @@ function Shell({ onLogout }: { onLogout: () => void }) {
           </span>
           <span className="text-lg font-bold tracking-tight">LifeOS</span>
         </div>
-        <Button className="mb-4 w-full" onClick={() => openSheet({ kind: "new" })}>
-          <Plus size={18} /> Novo lançamento
+        <Button className="mb-4 w-full" onClick={openNew}>
+          <Plus size={18} /> Novo
         </Button>
         <nav className="space-y-4">
-          {NAV_GROUPS.map(({ group, items }) => (
-            <div key={group ?? ""} className="space-y-1">
-              {group && <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-muted">{group}</p>}
+          {NAV_SECTIONS.map(({ label, items }) => (
+            <div key={items[0].section} className="space-y-1">
+              {label && <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-muted">{label}</p>}
               {items.map((n) => (
                 <button
                   key={n.view}
@@ -150,16 +162,15 @@ function Shell({ onLogout }: { onLogout: () => void }) {
           <div className="flex justify-center">
             <button
               type="button"
-              aria-label="Novo lançamento"
-              onClick={() => openSheet({ kind: "new" })}
+              aria-label="Novo"
+              onClick={openNew}
               className="-mt-6 flex h-14 w-14 items-center justify-center rounded-full bg-accent text-accent-fg shadow-lg shadow-accent/30 transition active:scale-95"
             >
               <Plus size={28} strokeWidth={2.5} />
             </button>
           </div>
-          {NAV.slice(2, 4).map((n) => (
-            <NavItem key={n.view} active={current.view === n.view} label={n.label} icon={<n.icon size={22} />} onClick={() => navigate(n.view)} />
-          ))}
+          <NavItem active={current.view === "tasks"} label="Tarefas" icon={<TasksIcon size={22} />} onClick={() => navigate("tasks")} />
+          <NavItem active={inMore} label="Mais" icon={<Ellipsis size={22} />} onClick={() => openSheet({ kind: "more" })} />
         </div>
       </nav>
 
