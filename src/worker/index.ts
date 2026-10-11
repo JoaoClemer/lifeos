@@ -3,7 +3,7 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { z } from "zod";
 import { api } from "./api";
 import { checkMcpToken, createSession, safeEqual, SESSION_COOKIE, SESSION_MAX_AGE, verifySession } from "./auth";
-import { UserError } from "./lib";
+import { makeCtx, UserError } from "./lib";
 import { handleMcpRequest } from "./mcp/server";
 
 z.config(z.locales.ptBR());
@@ -47,7 +47,11 @@ app.use("/api/*", async (c, next) => {
   await next();
 });
 
-app.get("/api/me", (c) => c.json({ ok: true }));
+// "Hoje" e fuso do servidor: o app usa os mesmos do MCP, independentemente do fuso do aparelho
+app.get("/api/me", (c) => {
+  const { today, timezone } = makeCtx(c.env);
+  return c.json({ ok: true, today, timezone });
+});
 app.route("/api", api);
 
 // ---- MCP: /mcp/<token> (conector do claude.ai) ou /mcp com "Authorization: Bearer <token>" ----

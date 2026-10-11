@@ -1,0 +1,734 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`MCP > as ferramentas financeiras (nomes, descrições e parâmetros) não mudam 1`] = `
+[
+  {
+    "annotations": {
+      "readOnlyHint": true,
+    },
+    "description": "Mostra o resumo financeiro de um mês: total de gastos (parcelados, fixos, avulsos), fatura por cartão, orçamentos (quanto gastou e quanto falta), devedores pendentes e aportes das metas.",
+    "inputSchema": {
+      "properties": {
+        "mes": {
+          "description": "Mês no formato YYYY-MM. Padrão: mês atual.",
+          "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+          "type": "string",
+        },
+      },
+      "type": "object",
+    },
+    "name": "resumo_mes",
+    "title": "Resumo do mês",
+  },
+  {
+    "annotations": {
+      "readOnlyHint": true,
+    },
+    "description": "Lista a data de hoje, os cartões/contas cadastrados (com dia de fechamento e vencimento), os fixos e orçamentos ativos, as metas e as pessoas que já te deveram. Use para descobrir os nomes certos antes de lançar.",
+    "inputSchema": {
+      "properties": {},
+      "type": "object",
+    },
+    "name": "listar_cadastros",
+    "title": "Cartões, orçamentos, metas e pessoas",
+  },
+  {
+    "description": "Lança um gasto avulso (à vista) no mês. O mês da fatura é calculado pelo dia de fechamento do cartão. Se o gasto for de um orçamento (ex.: almoço, transporte), informe \`orcamento\` para descontar dele. Se dividiu a conta com alguém, use \`dividir_com\`: a parte dos outros vira devedor e só a sua parte conta como seu gasto.",
+    "inputSchema": {
+      "properties": {
+        "conta": {
+          "description": "Nome do cartão/conta como cadastrado (ex.: "Nubank", "Inter", "Pix", "VR"). Se omitido, usa a conta padrão.",
+          "type": "string",
+        },
+        "data": {
+          "description": "Data no formato YYYY-MM-DD. Padrão: hoje.",
+          "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])$",
+          "type": "string",
+        },
+        "descricao": {
+          "description": "O que foi comprado, ex.: Mercado, Almoço, Uber",
+          "minLength": 1,
+          "type": "string",
+        },
+        "dividir_com": {
+          "description": "Pessoas que vão te pagar uma parte deste gasto",
+          "items": {
+            "properties": {
+              "pessoa": {
+                "minLength": 1,
+                "type": "string",
+              },
+              "valor": {
+                "description": "Parte da pessoa em reais. Se omitido, divide igualmente entre você e as pessoas sem valor.",
+                "exclusiveMinimum": 0,
+                "type": "number",
+              },
+            },
+            "required": [
+              "pessoa",
+            ],
+            "type": "object",
+          },
+          "type": "array",
+        },
+        "mes_referencia": {
+          "description": "Força o mês de referência (YYYY-MM). Normalmente não é necessário.",
+          "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+          "type": "string",
+        },
+        "observacao": {
+          "type": "string",
+        },
+        "orcamento": {
+          "description": "Nome do orçamento a descontar (ex.: "Alimentação", "Transporte")",
+          "type": "string",
+        },
+        "valor": {
+          "description": "Valor TOTAL pago, em reais (ex.: 32.5)",
+          "exclusiveMinimum": 0,
+          "type": "number",
+        },
+      },
+      "required": [
+        "descricao",
+        "valor",
+      ],
+      "type": "object",
+    },
+    "name": "lancar_despesa",
+    "title": "Lançar despesa",
+  },
+  {
+    "description": "Cadastra uma compra parcelada. Informe o valor da parcela OU o valor total. Para algo que você já está pagando, informe \`parcela_atual\` (ex.: está na 3ª de 10 este mês).",
+    "inputSchema": {
+      "properties": {
+        "conta": {
+          "description": "Nome do cartão/conta como cadastrado (ex.: "Nubank", "Inter", "Pix", "VR"). Se omitido, usa a conta padrão.",
+          "type": "string",
+        },
+        "data_compra": {
+          "description": "Data no formato YYYY-MM-DD. Padrão: hoje.",
+          "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])$",
+          "type": "string",
+        },
+        "descricao": {
+          "minLength": 1,
+          "type": "string",
+        },
+        "parcela_atual": {
+          "description": "Qual parcela cai no mês atual, para compras já em andamento",
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer",
+        },
+        "parcelas": {
+          "description": "Número total de parcelas",
+          "maximum": 120,
+          "minimum": 1,
+          "type": "integer",
+        },
+        "valor_parcela": {
+          "description": "Valor de cada parcela em reais",
+          "exclusiveMinimum": 0,
+          "type": "number",
+        },
+        "valor_total": {
+          "description": "Valor total da compra em reais",
+          "exclusiveMinimum": 0,
+          "type": "number",
+        },
+      },
+      "required": [
+        "descricao",
+        "parcelas",
+      ],
+      "type": "object",
+    },
+    "name": "lancar_parcelado",
+    "title": "Lançar compra parcelada",
+  },
+  {
+    "description": "Cadastra um gasto que se repete todo mês (assinatura, conta, etc.). Use \`orcamento: true\` para um valor reservado do qual você vai descontando gastos ao longo do mês (ex.: R$ 500 de almoço).",
+    "inputSchema": {
+      "properties": {
+        "conta": {
+          "description": "Cartão/conta onde é cobrado (não se aplica a orçamentos)",
+          "type": "string",
+        },
+        "descricao": {
+          "minLength": 1,
+          "type": "string",
+        },
+        "dia": {
+          "description": "Dia de cobrança/vencimento",
+          "maximum": 31,
+          "minimum": 1,
+          "type": "integer",
+        },
+        "mes_inicio": {
+          "description": "Mês no formato YYYY-MM. Padrão: mês atual.",
+          "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+          "type": "string",
+        },
+        "orcamento": {
+          "type": "boolean",
+        },
+        "valor": {
+          "description": "Valor mensal em reais",
+          "minimum": 0,
+          "type": "number",
+        },
+      },
+      "required": [
+        "descricao",
+        "valor",
+      ],
+      "type": "object",
+    },
+    "name": "adicionar_fixo",
+    "title": "Adicionar gasto fixo mensal",
+  },
+  {
+    "description": "Ajusta um fixo/orçamento: valor só em um mês (ex.: a conta de luz deste mês veio R$ 210), marcar como pago, mudar o valor padrão ou encerrar (cancelar assinatura).",
+    "inputSchema": {
+      "properties": {
+        "encerrar_apos": {
+          "description": "Último mês em que o fixo existe (YYYY-MM)",
+          "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+          "type": "string",
+        },
+        "fixo": {
+          "description": "Nome ou id do fixo",
+          "type": "string",
+        },
+        "mes": {
+          "description": "Mês no formato YYYY-MM. Padrão: mês atual.",
+          "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+          "type": "string",
+        },
+        "novo_valor_padrao": {
+          "description": "Novo valor para todos os meses",
+          "minimum": 0,
+          "type": "number",
+        },
+        "pago": {
+          "description": "Marca/desmarca como pago no mês",
+          "type": "boolean",
+        },
+        "valor_no_mes": {
+          "description": "Valor apenas no mês informado",
+          "minimum": 0,
+          "type": "number",
+        },
+      },
+      "required": [
+        "fixo",
+      ],
+      "type": "object",
+    },
+    "name": "ajustar_fixo",
+    "title": "Ajustar gasto fixo",
+  },
+  {
+    "description": "Registra que alguém te deve (ex.: você passou algo no seu cartão para a pessoa). Se foi no cartão, informe \`conta\` para o valor entrar na fatura. Para dividir um gasto seu, prefira lancar_despesa com dividir_com. Se a compra da pessoa foi parcelada no seu cartão, informe \`parcelas\` (e \`valor\` da parcela ou \`valor_total\`): cada parcela entra na fatura do seu mês.",
+    "inputSchema": {
+      "properties": {
+        "conta": {
+          "description": "Cartão/conta em que foi cobrado (se aplicável)",
+          "type": "string",
+        },
+        "data": {
+          "description": "Data no formato YYYY-MM-DD. Padrão: hoje.",
+          "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])$",
+          "type": "string",
+        },
+        "descricao": {
+          "minLength": 1,
+          "type": "string",
+        },
+        "parcela_atual": {
+          "description": "Para parcelamento já em andamento: qual parcela cai no mês atual",
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer",
+        },
+        "parcelas": {
+          "description": "Número de parcelas, se foi parcelado no cartão",
+          "maximum": 120,
+          "minimum": 1,
+          "type": "integer",
+        },
+        "pessoa": {
+          "minLength": 1,
+          "type": "string",
+        },
+        "valor": {
+          "description": "Valor que a pessoa te deve, em reais (se parcelado: valor de cada parcela)",
+          "exclusiveMinimum": 0,
+          "type": "number",
+        },
+        "valor_total": {
+          "description": "Só para parcelado: valor total da compra, em reais",
+          "exclusiveMinimum": 0,
+          "type": "number",
+        },
+      },
+      "required": [
+        "pessoa",
+        "descricao",
+      ],
+      "type": "object",
+    },
+    "name": "registrar_devedor",
+    "title": "Registrar devedor",
+  },
+  {
+    "description": "Marca como recebido(s): por ids específicos ou tudo que está pendente de uma pessoa. Use \`desfazer\` para reverter. Por pessoa, parcelas futuras de devedores parcelados não são marcadas, a menos que \`incluir_parcelas_futuras\` (ex.: a pessoa quitou tudo adiantado).",
+    "inputSchema": {
+      "properties": {
+        "data": {
+          "description": "Data no formato YYYY-MM-DD. Padrão: hoje.",
+          "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])$",
+          "type": "string",
+        },
+        "desfazer": {
+          "type": "boolean",
+        },
+        "ids": {
+          "items": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer",
+          },
+          "type": "array",
+        },
+        "incluir_parcelas_futuras": {
+          "type": "boolean",
+        },
+        "pessoa": {
+          "type": "string",
+        },
+      },
+      "type": "object",
+    },
+    "name": "marcar_recebido",
+    "title": "Marcar dívida como recebida",
+  },
+  {
+    "annotations": {
+      "readOnlyHint": true,
+    },
+    "description": "Lista quem te deve e quanto (pendentes por padrão). Parcelas futuras de devedores parcelados aparecem separadas.",
+    "inputSchema": {
+      "properties": {
+        "incluir_recebidos": {
+          "type": "boolean",
+        },
+        "pessoa": {
+          "type": "string",
+        },
+      },
+      "type": "object",
+    },
+    "name": "listar_devedores",
+    "title": "Listar devedores",
+  },
+  {
+    "description": "A sobra de cada mês (renda - gastos - aportes) vira automaticamente o saldo inicial do mês seguinte. Use esta ferramenta para corrigir com o valor real (ex.: conferiu o banco). 'Terminei outubro com 480' → valor 480, mes 2026-10, momento 'fim'. 'Comecei novembro com 480' → momento 'inicio'. O valor pode ser negativo. Com automatico=true, remove o ajuste e volta ao cálculo automático.",
+    "inputSchema": {
+      "properties": {
+        "automatico": {
+          "description": "Remove o ajuste manual do mês",
+          "type": "boolean",
+        },
+        "mes": {
+          "description": "Mês no formato YYYY-MM. Padrão: mês atual.",
+          "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+          "type": "string",
+        },
+        "momento": {
+          "description": "Se o valor é o saldo no início ou no fim do mês. Padrão: inicio",
+          "enum": [
+            "inicio",
+            "fim",
+          ],
+          "type": "string",
+        },
+        "observacao": {
+          "type": "string",
+        },
+        "valor": {
+          "description": "Saldo real em reais (pode ser negativo)",
+          "type": "number",
+        },
+      },
+      "type": "object",
+    },
+    "name": "ajustar_saldo",
+    "title": "Ajustar saldo acumulado",
+  },
+  {
+    "description": "Registra uma entrada extra de dinheiro no mês, além do salário fixo: 13º salário, bônus, PLR, férias, freela, reembolso, venda etc. Ela soma na renda do mês e na sobra prevista. (O salário fixo mensal é configurado em Ajustes no app.)",
+    "inputSchema": {
+      "properties": {
+        "data": {
+          "description": "Data no formato YYYY-MM-DD. Padrão: hoje.",
+          "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])$",
+          "type": "string",
+        },
+        "descricao": {
+          "description": "Ex.: 13º salário, Bônus, PLR, Freela",
+          "minLength": 1,
+          "type": "string",
+        },
+        "mes": {
+          "description": "Mês em que a entrada conta (YYYY-MM). Padrão: mês da data.",
+          "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+          "type": "string",
+        },
+        "observacao": {
+          "type": "string",
+        },
+        "valor": {
+          "description": "Valor recebido, em reais",
+          "exclusiveMinimum": 0,
+          "type": "number",
+        },
+      },
+      "required": [
+        "descricao",
+        "valor",
+      ],
+      "type": "object",
+    },
+    "name": "registrar_entrada",
+    "title": "Registrar entrada de dinheiro",
+  },
+  {
+    "annotations": {
+      "readOnlyHint": true,
+    },
+    "description": "Lista os lançamentos de um mês: avulsos, parcelados, fixos e/ou entradas extras, com ids (para editar ou remover).",
+    "inputSchema": {
+      "properties": {
+        "busca": {
+          "description": "Texto na descrição (avulsos)",
+          "type": "string",
+        },
+        "conta": {
+          "description": "Filtra avulsos por cartão/conta",
+          "type": "string",
+        },
+        "mes": {
+          "description": "Mês no formato YYYY-MM. Padrão: mês atual.",
+          "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+          "type": "string",
+        },
+        "orcamento": {
+          "description": "Filtra avulsos de um orçamento",
+          "type": "string",
+        },
+        "tipo": {
+          "enum": [
+            "todos",
+            "avulsos",
+            "parcelados",
+            "fixos",
+            "entradas",
+          ],
+          "type": "string",
+        },
+      },
+      "type": "object",
+    },
+    "name": "listar_lancamentos",
+    "title": "Listar lançamentos",
+  },
+  {
+    "description": "Edita um lançamento existente pelo id (veja os ids com listar_lancamentos / listar_devedores).",
+    "inputSchema": {
+      "properties": {
+        "conta": {
+          "type": "string",
+        },
+        "data": {
+          "description": "Data no formato YYYY-MM-DD. Padrão: hoje.",
+          "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])$",
+          "type": "string",
+        },
+        "descricao": {
+          "type": "string",
+        },
+        "id": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer",
+        },
+        "mes_referencia": {
+          "description": "Mês no formato YYYY-MM. Padrão: mês atual.",
+          "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+          "type": "string",
+        },
+        "orcamento": {
+          "description": "Só avulso: nome do orçamento, ou "nenhum" para desvincular",
+          "type": "string",
+        },
+        "pessoa": {
+          "description": "Só devedor",
+          "type": "string",
+        },
+        "tipo": {
+          "enum": [
+            "avulso",
+            "parcelado",
+            "fixo",
+            "devedor",
+            "entrada",
+          ],
+          "type": "string",
+        },
+        "valor": {
+          "description": "Novo valor em reais (para parcelado: valor da parcela; para fixo: valor padrão)",
+          "exclusiveMinimum": 0,
+          "type": "number",
+        },
+      },
+      "required": [
+        "tipo",
+        "id",
+      ],
+      "type": "object",
+    },
+    "name": "editar_lancamento",
+    "title": "Editar lançamento",
+  },
+  {
+    "annotations": {
+      "destructiveHint": true,
+    },
+    "description": "Remove definitivamente um lançamento pelo id. Para fixos/assinaturas, prefira ajustar_fixo com encerrar_apos (mantém o histórico). Para devedor parcelado, \`todas_parcelas\` remove todas as parcelas ainda não recebidas. Confirme com o usuário antes.",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer",
+        },
+        "tipo": {
+          "enum": [
+            "avulso",
+            "parcelado",
+            "fixo",
+            "devedor",
+            "entrada",
+            "meta",
+            "movimentacao_meta",
+          ],
+          "type": "string",
+        },
+        "todas_parcelas": {
+          "description": "Só devedor parcelado: remove todas as parcelas pendentes do parcelamento",
+          "type": "boolean",
+        },
+      },
+      "required": [
+        "tipo",
+        "id",
+      ],
+      "type": "object",
+    },
+    "name": "remover_lancamento",
+    "title": "Remover lançamento",
+  },
+  {
+    "annotations": {
+      "readOnlyHint": true,
+    },
+    "description": "Lista metas/investimentos com saldo, alvo, aporte mensal, se o aporte do mês foi feito e a previsão para atingir a meta.",
+    "inputSchema": {
+      "properties": {
+        "mes": {
+          "description": "Mês no formato YYYY-MM. Padrão: mês atual.",
+          "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+          "type": "string",
+        },
+      },
+      "type": "object",
+    },
+    "name": "listar_metas",
+    "title": "Listar metas e investimentos",
+  },
+  {
+    "description": "Cria uma meta/caixinha de investimento, com o valor que você já tem, o alvo (opcional), o aporte mensal planejado e o prazo.",
+    "inputSchema": {
+      "properties": {
+        "aporte_mensal": {
+          "exclusiveMinimum": 0,
+          "type": "number",
+        },
+        "nome": {
+          "minLength": 1,
+          "type": "string",
+        },
+        "onde": {
+          "description": "Onde está investido, ex.: Tesouro Selic, CDB Nubank",
+          "type": "string",
+        },
+        "prazo": {
+          "description": "Mês limite para atingir a meta (YYYY-MM)",
+          "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+          "type": "string",
+        },
+        "valor_alvo": {
+          "exclusiveMinimum": 0,
+          "type": "number",
+        },
+        "valor_atual": {
+          "minimum": 0,
+          "type": "number",
+        },
+      },
+      "required": [
+        "nome",
+      ],
+      "type": "object",
+    },
+    "name": "criar_meta",
+    "title": "Criar meta ou investimento",
+  },
+  {
+    "description": "Registra um aporte (ou resgate) em uma meta e dá o check do mês. Sem \`valor\`, lança o que falta do aporte mensal planejado.",
+    "inputSchema": {
+      "properties": {
+        "mes": {
+          "description": "Mês no formato YYYY-MM. Padrão: mês atual.",
+          "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+          "type": "string",
+        },
+        "meta": {
+          "description": "Nome ou id da meta",
+          "type": "string",
+        },
+        "observacao": {
+          "type": "string",
+        },
+        "tipo": {
+          "enum": [
+            "aporte",
+            "resgate",
+          ],
+          "type": "string",
+        },
+        "valor": {
+          "exclusiveMinimum": 0,
+          "type": "number",
+        },
+      },
+      "required": [
+        "meta",
+      ],
+      "type": "object",
+    },
+    "name": "registrar_aporte",
+    "title": "Registrar aporte ou resgate",
+  },
+  {
+    "description": "Informa o saldo atual de uma meta/investimento (ex.: com rendimentos). A diferença é registrada como ajuste.",
+    "inputSchema": {
+      "properties": {
+        "meta": {
+          "type": "string",
+        },
+        "saldo_atual": {
+          "minimum": 0,
+          "type": "number",
+        },
+      },
+      "required": [
+        "meta",
+        "saldo_atual",
+      ],
+      "type": "object",
+    },
+    "name": "atualizar_saldo_meta",
+    "title": "Atualizar saldo de investimento",
+  },
+  {
+    "description": "Cadastra um cartão de crédito ou outra forma de pagamento (Pix, débito, VR...). Para cartão, informe dia de fechamento e vencimento.",
+    "inputSchema": {
+      "properties": {
+        "dia_fechamento": {
+          "maximum": 31,
+          "minimum": 1,
+          "type": "integer",
+        },
+        "dia_pagamento": {
+          "description": "Dia em que o usuário paga a fatura, se diferente do vencimento (ex.: vence 1 e paga 25, quando recebe o salário)",
+          "maximum": 31,
+          "minimum": 1,
+          "type": "integer",
+        },
+        "dia_vencimento": {
+          "maximum": 31,
+          "minimum": 1,
+          "type": "integer",
+        },
+        "nome": {
+          "minLength": 1,
+          "type": "string",
+        },
+        "padrao": {
+          "description": "Usar como conta padrão quando nenhuma for informada",
+          "type": "boolean",
+        },
+        "tipo": {
+          "description": "credit=crédito, voucher=VR/VA",
+          "enum": [
+            "credit",
+            "debit",
+            "pix",
+            "cash",
+            "voucher",
+            "other",
+          ],
+          "type": "string",
+        },
+      },
+      "required": [
+        "nome",
+        "tipo",
+      ],
+      "type": "object",
+    },
+    "name": "cadastrar_conta",
+    "title": "Cadastrar cartão/conta",
+  },
+]
+`;
+
+exports[`MCP > resumo_mes descreve o mês como antes 1`] = `
+"Resumo de outubro de 2026 (hoje: 15/10/2026)
+Total de gastos do mês: R$ 2.654,32
+• Parcelados: R$ 959,90
+• Fixos (inclui orçamentos): R$ 1.220,97 — orçamentos estourados em R$ 28,90
+• Avulsos: R$ 473,45
+Renda: R$ 7.300,00 (salário R$ 6.500,00 + entradas extras R$ 800,00) → sobra prevista: R$ 3.145,68
+Saldo inicial: R$ 2.600,40 (vindo de setembro de 2026) → saldo final previsto: R$ 5.746,08
+
+Por cartão/conta (o que cai em cada um, incluindo a parte de devedores):
+• Cartão B (vence dia 12): R$ 1.460,15
+• Cartão A (vence dia 1 do mês seguinte, pago dia 25): R$ 495,90
+• Pix: R$ 391,27
+• VR: R$ 61,40
+
+Orçamentos (fixos a descontar):
+• Almoço: gasto R$ 61,40 de R$ 600,00 — restam R$ 538,60
+• Transporte: gasto R$ 178,90 de R$ 150,00 — estourou R$ 28,90
+
+A receber (pendente, todos os meses): R$ 293,00
+• Pedro: R$ 200,00 (1 itens)
+• Ana: R$ 93,00 (1 itens)
+Parcelas futuras de devedores parcelados (ainda não venceram): R$ 400,00
+
+Aportes em metas no mês: R$ 500,00 feitos de R$ 1.500,00 planejados"
+`;

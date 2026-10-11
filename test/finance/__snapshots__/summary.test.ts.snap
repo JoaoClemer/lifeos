@@ -1,0 +1,267 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`getSummary > setembro, outubro e novembro/2026: retrato completo > 2026-09 1`] = `
+{
+  "balance": {
+    "automatic_opening_cents": 0,
+    "closing_cents": 260040,
+    "leftover_cents": 260040,
+    "note": null,
+    "opening_cents": 0,
+    "opening_source": "start",
+    "start_month": "2026-09",
+  },
+  "budgets": [
+    {
+      "description": "Almoço",
+      "id": 5,
+      "limit_cents": 60000,
+      "remaining_cents": 60000,
+      "spent_cents": 0,
+    },
+    {
+      "description": "Transporte",
+      "id": 6,
+      "limit_cents": 15000,
+      "remaining_cents": 15000,
+      "spent_cents": 0,
+    },
+  ],
+  "by_account": [
+    {
+      "account_id": 2,
+      "due_day": 12,
+      "name": "Cartão B",
+      "payment_day": null,
+      "total_cents": 102970,
+      "type": "credit",
+    },
+    {
+      "account_id": 1,
+      "due_day": 1,
+      "name": "Cartão A",
+      "payment_day": 25,
+      "total_cents": 15990,
+      "type": "credit",
+    },
+    {
+      "account_id": 3,
+      "due_day": null,
+      "name": "Pix",
+      "payment_day": null,
+      "total_cents": 46000,
+      "type": "pix",
+    },
+  ],
+  "month": "2026-09",
+  "pending_by_person": [
+    {
+      "count": 1,
+      "person": "Pedro",
+      "total_cents": 20000,
+    },
+    {
+      "count": 1,
+      "person": "Ana",
+      "total_cents": 9300,
+    },
+  ],
+  "today": "2026-10-15",
+  "totals": {
+    "budget_overflow_cents": 0,
+    "goals_done_cents": 150000,
+    "goals_planned_cents": 150000,
+    "income_base_cents": 650000,
+    "income_cents": 650000,
+    "income_extra_cents": 0,
+    "installments_cents": 95990,
+    "leftover_cents": 260040,
+    "one_off_cents": 30000,
+    "receivable_future_cents": 40000,
+    "receivable_month_cents": 15000,
+    "receivable_pending_cents": 29300,
+    "recurring_cents": 113970,
+    "total_cents": 239960,
+  },
+}
+`;
+
+exports[`getSummary > setembro, outubro e novembro/2026: retrato completo > 2026-10 1`] = `
+{
+  "balance": {
+    "automatic_opening_cents": 260040,
+    "closing_cents": 574608,
+    "leftover_cents": 314568,
+    "note": null,
+    "opening_cents": 260040,
+    "opening_source": "carried",
+    "start_month": "2026-09",
+  },
+  "budgets": [
+    {
+      "description": "Almoço",
+      "id": 5,
+      "limit_cents": 60000,
+      "remaining_cents": 53860,
+      "spent_cents": 6140,
+    },
+    {
+      "description": "Transporte",
+      "id": 6,
+      "limit_cents": 15000,
+      "remaining_cents": -2890,
+      "spent_cents": 17890,
+    },
+  ],
+  "by_account": [
+    {
+      "account_id": 2,
+      "due_day": 12,
+      "name": "Cartão B",
+      "payment_day": null,
+      "total_cents": 146015,
+      "type": "credit",
+    },
+    {
+      "account_id": 1,
+      "due_day": 1,
+      "name": "Cartão A",
+      "payment_day": 25,
+      "total_cents": 49590,
+      "type": "credit",
+    },
+    {
+      "account_id": 3,
+      "due_day": null,
+      "name": "Pix",
+      "payment_day": null,
+      "total_cents": 39127,
+      "type": "pix",
+    },
+    {
+      "account_id": 4,
+      "due_day": null,
+      "name": "VR",
+      "payment_day": null,
+      "total_cents": 6140,
+      "type": "voucher",
+    },
+  ],
+  "month": "2026-10",
+  "pending_by_person": [
+    {
+      "count": 1,
+      "person": "Pedro",
+      "total_cents": 20000,
+    },
+    {
+      "count": 1,
+      "person": "Ana",
+      "total_cents": 9300,
+    },
+  ],
+  "today": "2026-10-15",
+  "totals": {
+    "budget_overflow_cents": 2890,
+    "goals_done_cents": 50000,
+    "goals_planned_cents": 150000,
+    "income_base_cents": 650000,
+    "income_cents": 730000,
+    "income_extra_cents": 80000,
+    "installments_cents": 95990,
+    "leftover_cents": 314568,
+    "one_off_cents": 47345,
+    "receivable_future_cents": 40000,
+    "receivable_month_cents": 29300,
+    "receivable_pending_cents": 29300,
+    "recurring_cents": 122097,
+    "total_cents": 265432,
+  },
+}
+`;
+
+exports[`getSummary > setembro, outubro e novembro/2026: retrato completo > 2026-11 1`] = `
+{
+  "balance": {
+    "automatic_opening_cents": 574608,
+    "closing_cents": 428790,
+    "leftover_cents": 328790,
+    "note": "Conferido no banco",
+    "opening_cents": 100000,
+    "opening_source": "manual",
+    "start_month": "2026-09",
+  },
+  "budgets": [
+    {
+      "description": "Almoço",
+      "id": 5,
+      "limit_cents": 60000,
+      "remaining_cents": 60000,
+      "spent_cents": 0,
+    },
+    {
+      "description": "Transporte",
+      "id": 6,
+      "limit_cents": 20000,
+      "remaining_cents": 20000,
+      "spent_cents": 0,
+    },
+  ],
+  "by_account": [
+    {
+      "account_id": 2,
+      "due_day": 12,
+      "name": "Cartão B",
+      "payment_day": null,
+      "total_cents": 79220,
+      "type": "credit",
+    },
+    {
+      "account_id": 1,
+      "due_day": 1,
+      "name": "Cartão A",
+      "payment_day": 25,
+      "total_cents": 15990,
+      "type": "credit",
+    },
+    {
+      "account_id": 3,
+      "due_day": null,
+      "name": "Pix",
+      "payment_day": null,
+      "total_cents": 16000,
+      "type": "pix",
+    },
+  ],
+  "month": "2026-11",
+  "pending_by_person": [
+    {
+      "count": 2,
+      "person": "Pedro",
+      "total_cents": 40000,
+    },
+    {
+      "count": 1,
+      "person": "Ana",
+      "total_cents": 9300,
+    },
+  ],
+  "today": "2026-10-15",
+  "totals": {
+    "budget_overflow_cents": 0,
+    "goals_done_cents": 0,
+    "goals_planned_cents": 150000,
+    "income_base_cents": 650000,
+    "income_cents": 650000,
+    "income_extra_cents": 0,
+    "installments_cents": 57000,
+    "leftover_cents": 328790,
+    "one_off_cents": 4230,
+    "receivable_future_cents": 20000,
+    "receivable_month_cents": 20000,
+    "receivable_pending_cents": 49300,
+    "recurring_cents": 109980,
+    "total_cents": 171210,
+  },
+}
+`;
