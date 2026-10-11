@@ -101,8 +101,8 @@ flowchart LR
 ## Rodar localmente
 
 ```bash
-git clone https://github.com/JoaoClemer/personal-finance.git
-cd personal-finance
+git clone https://github.com/JoaoClemer/lifeos.git
+cd lifeos
 npm install
 cp .dev.vars.example .dev.vars   # defina APP_PASSWORD e MCP_TOKEN locais
 npm run db:migrate:local
