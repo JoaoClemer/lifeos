@@ -580,6 +580,12 @@ Ajustes em relação ao plano:
 - **`recordWorkout`.** Já existe para o MCP da Fase 5. Se houver um treino planejado da modalidade no dia, ele é preenchido; senão, é criado um treino sem plano. Se houver dois planejados iguais no dia, pergunta qual.
 - **"Copiar o plano da semana anterior".** Acrescentei esse atalho para o planejamento semanal. Os cancelados e os sem plano não são copiados.
 
+### Fase 4 (11/10/2026): concluída
+
+- **Finanças em Hoje.** `getFinance` só lê o `getSummary`: gastos do mês, sobra prevista, saldo final previsto, a receber e orçamentos que estouraram ou passaram de 85%. Um teste exige que os números sejam idênticos aos do resumo.
+- **`/api/week`.** Junta compromissos da semana, tarefas concluídas (pela data de conclusão), tarefas com prazo na semana, atrasadas e os indicadores de treino. A mesma função vai servir à revisão semanal do MCP.
+- **Tela Hoje.** Tem atalhos (Tarefa, Evento, Treino, Gasto), quatro indicadores clicáveis e as seções do dia, de finanças e da semana.
+
 ## 10. Decisões aprovadas (11/10/2026)
 
 1. **Barra inferior no celular:** Hoje · Agenda · ＋ · Tarefas · Mais (Treinos, Finanças, Ajustes).

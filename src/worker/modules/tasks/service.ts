@@ -58,6 +58,9 @@ export interface TaskFilter {
   /** Prazo dentro do intervalo (inclusive). */
   due_from?: string;
   due_to?: string;
+  /** Concluídas entre estes dias (inclusive). */
+  completed_from?: string;
+  completed_to?: string;
   /** Omitido: só tarefas principais. Número: subtarefas dessa tarefa. */
   parent_id?: number;
   ids?: number[];
@@ -84,6 +87,9 @@ export async function listTasks(ctx: Ctx, f: TaskFilter = {}): Promise<Task[]> {
   if (f.search) (where.push("(t.title LIKE ? OR t.notes LIKE ?)"), args.push(`%${f.search}%`, `%${f.search}%`));
   if (f.due_from) (where.push("t.due_date >= ?"), args.push(f.due_from));
   if (f.due_to) (where.push("t.due_date <= ?"), args.push(f.due_to));
+  // completed_at é data e hora local ('YYYY-MM-DDTHH:MM'): compara pelo dia
+  if (f.completed_from) (where.push("substr(t.completed_at, 1, 10) >= ?"), args.push(f.completed_from));
+  if (f.completed_to) (where.push("substr(t.completed_at, 1, 10) <= ?"), args.push(f.completed_to));
   const order = status === "done" ? "t.completed_at DESC, t.id DESC" : "t.id";
   const sql = `${SELECT} WHERE ${where.join(" AND ")} ORDER BY ${order} LIMIT ${Math.min(f.limit ?? 500, 1000)}`;
   const tasks = (await ctx.db.prepare(sql).bind(...args).all<TaskRow>()).results.map(decorate);
