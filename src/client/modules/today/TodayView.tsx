@@ -1,4 +1,4 @@
-import { CalendarDays, CheckCircle2 } from "lucide-react";
+import { Activity, CalendarDays, CheckCircle2 } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Today } from "../../../shared/today";
 import type { Project } from "../../../shared/tasks";
@@ -8,9 +8,10 @@ import { LinkButton, List, Section } from "../../ui";
 import { ListSkeleton } from "../../views/ExpensesView";
 import { EventRow } from "../agenda/EventRow";
 import { TaskRow } from "../tasks/TaskRow";
+import { TrainingRow } from "../training/TrainingRow";
 
 export function TodayView() {
-  const { navigate } = useApp();
+  const { navigate, openSheet } = useApp();
   const data = useData<Today>("/api/today").data;
   const projects = new Map((useData<Project[]>("/api/projects?all=1").data ?? []).map((p) => [p.id, p]));
   if (!data) return <ListSkeleton />;
@@ -61,6 +62,20 @@ export function TodayView() {
           </List>
         ) : (
           <EmptyLine icon={<CheckCircle2 size={18} />} text="Nenhuma tarefa para hoje." />
+        )}
+      </Section>
+
+      <Section title="Treino de hoje" action={<LinkButton onClick={() => navigate("training")}>Ver semana</LinkButton>}>
+        {data.training.length ? (
+          <List>
+            {data.training.map((s) => (
+              <TrainingRow key={s.id} session={s} />
+            ))}
+          </List>
+        ) : (
+          <button type="button" className="w-full text-left" onClick={() => openSheet({ kind: "new", tab: "training", training: { date: data.date } })}>
+            <EmptyLine icon={<Activity size={18} />} text="Nenhum treino planejado. Toque para planejar ou registrar." />
+          </button>
         )}
       </Section>
 

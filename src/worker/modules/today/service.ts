@@ -6,18 +6,32 @@ import type { EventItem, Today } from "../../../shared/today";
 import type { Ctx } from "../../lib";
 import { listOccurrences } from "../agenda/service";
 import { listTasks } from "../tasks/service";
+import { listSessions } from "../training/service";
 
-/** Agenda unificada entre os dias `from` e `to` (inclusive): eventos e prazos de tarefas abertas. */
+/** Posição do item no dia: pelo horário; treinos sem horário depois dos de dia inteiro; prazos de tarefas no fim. */
+function sortKey(i: AgendaItem): string {
+  if (i.kind === "event") return i.start_at;
+  if (i.kind === "training") return `${i.date}T${i.session.time ?? "00:00"}`;
+  return `${i.date}T99`;
+}
+
+/** Agenda unificada entre os dias `from` e `to` (inclusive): eventos, treinos e prazos de tarefas abertas. */
 export async function getAgenda(ctx: Ctx, from: string, to: string): Promise<AgendaItem[]> {
-  const [occurrences, due] = await Promise.all([listOccurrences(ctx, from, to), listTasks(ctx, { due_from: from, due_to: to })]);
+  const [occurrences, due, sessions] = await Promise.all([
+    listOccurrences(ctx, from, to),
+    listTasks(ctx, { due_from: from, due_to: to }),
+    listSessions(ctx, from, to),
+  ]);
   const taskIds = [...new Set(occurrences.map((o) => o.task_id).filter((id): id is number => id !== null))];
   const linked = new Map((await listTasks(ctx, { status: "all", ids: taskIds })).map((t) => [t.id, t]));
   const items: AgendaItem[] = occurrences.map((o) => {
     const t = o.task_id ? linked.get(o.task_id) : undefined;
     return { kind: "event", ...o, task: t ? { id: t.id, title: t.title, status: t.status } : null };
   });
+  for (const session of sessions) items.push({ kind: "training", date: session.date, session });
   for (const task of due) items.push({ kind: "task_due", date: task.due_date!, task });
-  return items;
+  // sort é estável: dentro do mesmo horário mantém a ordem de cada módulo
+  return items.sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
 }
 
 export async function getToday(ctx: Ctx): Promise<Today> {
@@ -34,5 +48,6 @@ export async function getToday(ctx: Ctx): Promise<Today> {
       today: open.filter((t) => t.due_date === ctx.today),
       priority: open.filter((t) => t.priority === "high" && (!t.due_date || t.due_date > ctx.today)).slice(0, 5),
     },
+    training: agenda.flatMap((i) => (i.kind === "training" && i.date === ctx.today ? [i.session] : [])),
   };
 }

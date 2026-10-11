@@ -69,3 +69,11 @@ INSERT INTO events (title, start_at, end_at, all_day, location, url, category, c
   ('Inglês', strftime('%Y-%m-%dT19:00', 'now', '-3 hours', 'weekday 1', '-7 days'), strftime('%Y-%m-%dT20:30', 'now', '-3 hours', 'weekday 1', '-7 days'), 0, NULL, NULL, 'Estudos', 'violet', 'FREQ=WEEKLY;BYDAY=MO,WE'),
   ('Reunião de planejamento', strftime('%Y-%m-%dT10:00', 'now', '-3 hours', '+1 day'), strftime('%Y-%m-%dT11:00', 'now', '-3 hours', '+1 day'), 0, NULL, 'https://meet.example.com/planejamento', 'Trabalho', 'blue', NULL),
   ('Aniversário da Ana', date('now', '-3 hours', '+5 days') || 'T00:00', date('now', '-3 hours', '+6 days') || 'T00:00', 1, NULL, NULL, 'Família', 'amber', NULL);
+
+-- LifeOS: treinos (fictícios). Semana atual: alguns já registrados, outros planejados.
+INSERT INTO training_sessions (sport, title, workout_type, date, time, planned_duration_s, planned_distance_m, planned_intensity, instructions, status, actual_duration_s, actual_distance_m, avg_hr, rpe) VALUES
+  ('run',      NULL,        'easy',      date('now', '-3 hours', '-2 days'), '06:30', 3000, 8000,  'Z2',     NULL,                                  'done',    3080, 8200, 146, 5),
+  ('strength', 'Treino A',  'strength',  date('now', '-3 hours', '-1 day'),  NULL,    3600, NULL,  NULL,     'Agachamento 4x10, Supino 4x8, Remada 4x10', 'skipped', NULL, NULL, NULL, NULL),
+  ('run',      'Intervalado', 'intervals', date('now', '-3 hours'),          '18:30', 3300, 9000,  'forte',  '15 min aquecimento, 6x800 m, 10 min solto', 'planned', NULL, NULL, NULL, NULL),
+  ('swim',     NULL,        'technique', date('now', '-3 hours', '+1 day'),  '07:00', 2700, 2000,  NULL,     NULL,                                  'planned', NULL, NULL, NULL, NULL),
+  ('run',      'Longão',    'long',      date('now', '-3 hours', '+3 days'), '07:00', 6600, 18000, 'Z2',     NULL,                                  'planned', NULL, NULL, NULL, NULL);

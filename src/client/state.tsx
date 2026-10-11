@@ -2,11 +2,12 @@ import { createContext, type ReactNode, useCallback, useContext, useEffect, useM
 import { todayIn } from "../shared/month";
 import type { Occurrence } from "../shared/agenda";
 import type { Project, Task } from "../shared/tasks";
+import type { TrainingSession } from "../shared/training";
 import type { Account, Expense, Goal, Income, Installment, MonthBalance, Receivable, Recurring } from "../shared/types";
 import { api } from "./api";
 
 export type FinanceTab = "expense" | "installment" | "recurring" | "receivable" | "income";
-export type NewTab = "task" | "event" | FinanceTab;
+export type NewTab = "task" | "event" | "training" | FinanceTab;
 
 /** Valores iniciais ao criar um evento (ex.: dia escolhido na agenda, horário reservado para uma tarefa). */
 export interface EventDefaults {
@@ -16,8 +17,16 @@ export interface EventDefaults {
 }
 
 export type SheetState =
-  | { kind: "new"; tab?: NewTab; budgetId?: number; event?: EventDefaults; task?: Partial<Pick<Task, "due_date" | "project_id">> }
+  | {
+      kind: "new";
+      tab?: NewTab;
+      budgetId?: number;
+      event?: EventDefaults;
+      task?: Partial<Pick<Task, "due_date" | "project_id">>;
+      training?: { date?: string };
+    }
   | { kind: "task"; item: Task }
+  | { kind: "training"; item: TrainingSession }
   | { kind: "event"; item: Occurrence }
   | { kind: "project"; item?: Project }
   | { kind: "more" }
