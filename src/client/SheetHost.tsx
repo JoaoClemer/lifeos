@@ -7,12 +7,17 @@ import { IncomeForm } from "./forms/IncomeForm";
 import { InstallmentForm } from "./forms/InstallmentForm";
 import { ReceivableForm } from "./forms/ReceivableForm";
 import { RecurringForm } from "./forms/RecurringForm";
-import { type NewTab, useApp, useData } from "./state";
+import { EventForm } from "./modules/agenda/EventForm";
+import { ProjectForm } from "./modules/tasks/ProjectForm";
+import { TaskForm } from "./modules/tasks/TaskForm";
+import { NAV_SECTIONS } from "./nav";
+import { type EventDefaults, type FinanceTab, type NewTab, useApp, useData } from "./state";
 import { monthTitle } from "../shared/month";
+import type { Task } from "../shared/tasks";
 import type { Goal } from "../shared/types";
-import { Segmented, Sheet } from "./ui";
+import { cx, Segmented, Sheet } from "./ui";
 
-const TABS: { value: NewTab; label: string }[] = [
+const FINANCE_TABS: { value: FinanceTab; label: string }[] = [
   { value: "expense", label: "Gasto" },
   { value: "installment", label: "Parcelado" },
   { value: "recurring", label: "Fixo" },
@@ -20,11 +25,37 @@ const TABS: { value: NewTab; label: string }[] = [
   { value: "income", label: "Entrada" },
 ];
 
-function NewEntry({ tab: initial, budgetId, onDone }: { tab?: NewTab; budgetId?: number; onDone: () => void }) {
+type Group = "task" | "event" | "finance";
+
+function NewEntry({
+  tab: initial,
+  budgetId,
+  event,
+  task,
+  onDone,
+}: {
+  tab?: NewTab;
+  budgetId?: number;
+  event?: EventDefaults;
+  task?: Partial<Pick<Task, "due_date" | "project_id">>;
+  onDone: () => void;
+}) {
   const [tab, setTab] = useState<NewTab>(initial ?? "expense");
+  const group: Group = tab === "task" || tab === "event" ? tab : "finance";
   return (
     <div className="space-y-4">
-      <Segmented options={TABS} value={tab} onChange={setTab} />
+      <Segmented<Group>
+        options={[
+          { value: "task", label: "Tarefa" },
+          { value: "event", label: "Evento" },
+          { value: "finance", label: "Finanças" },
+        ]}
+        value={group}
+        onChange={(g) => setTab(g === "finance" ? "expense" : g)}
+      />
+      {group === "finance" && <Segmented<FinanceTab> options={FINANCE_TABS} value={tab as FinanceTab} onChange={setTab} />}
+      {tab === "task" && <TaskForm key="t" defaults={task} onDone={onDone} />}
+      {tab === "event" && <EventForm key="v" defaults={event} onDone={onDone} />}
       {tab === "expense" && <ExpenseForm key="e" budgetId={budgetId} onDone={onDone} />}
       {tab === "installment" && <InstallmentForm key="i" onDone={onDone} />}
       {tab === "recurring" && <RecurringForm key="r" onDone={onDone} />}
@@ -41,8 +72,32 @@ export function SheetHost() {
   switch (sheet.kind) {
     case "new":
       return (
-        <Sheet title="Novo lançamento" onClose={closeSheet}>
-          <NewEntry tab={sheet.tab} budgetId={sheet.budgetId} onDone={done} />
+        <Sheet title="Novo" onClose={closeSheet}>
+          <NewEntry tab={sheet.tab} budgetId={sheet.budgetId} event={sheet.event} task={sheet.task} onDone={done} />
+        </Sheet>
+      );
+    case "task":
+      return (
+        <Sheet title={sheet.item.parent_id ? "Subtarefa" : "Tarefa"} onClose={closeSheet}>
+          <TaskForm item={sheet.item} onDone={done} />
+        </Sheet>
+      );
+    case "event":
+      return (
+        <Sheet title="Evento" onClose={closeSheet}>
+          <EventForm item={sheet.item} onDone={done} />
+        </Sheet>
+      );
+    case "project":
+      return (
+        <Sheet title={sheet.item ? "Editar projeto" : "Novo projeto"} onClose={closeSheet}>
+          <ProjectForm item={sheet.item} onDone={done} />
+        </Sheet>
+      );
+    case "more":
+      return (
+        <Sheet title="Mais" onClose={closeSheet}>
+          <MoreMenu onDone={done} />
         </Sheet>
       );
     case "expense":
@@ -107,5 +162,36 @@ function GoalDetailSheet({ id, onClose, onEdit }: { id: number; onClose: () => v
     <Sheet title={name} onClose={onClose}>
       <GoalDetail id={id} onEdit={onEdit} />
     </Sheet>
+  );
+}
+
+/** Telas que não cabem na barra inferior do celular. */
+function MoreMenu({ onDone }: { onDone: () => void }) {
+  const { route, navigate } = useApp();
+  return (
+    <nav className="space-y-4 pb-2">
+      {NAV_SECTIONS.filter((s) => s.label || s.items.some((n) => n.section === "system")).map((s) => (
+        <div key={s.label ?? "system"} className="space-y-1">
+          {s.label && <p className="px-1 pb-1 text-xs font-semibold uppercase tracking-wide text-muted">{s.label}</p>}
+          {s.items.map((n) => (
+            <button
+              key={n.view}
+              type="button"
+              onClick={() => {
+                onDone();
+                navigate(n.view);
+              }}
+              aria-current={route.view === n.view ? "page" : undefined}
+              className={cx(
+                "flex w-full items-center gap-3 rounded-xl px-3 py-3 text-[15px] font-medium transition",
+                route.view === n.view ? "bg-accent-soft text-accent" : "hover:bg-surface-2",
+              )}
+            >
+              <n.icon size={20} /> {n.label}
+            </button>
+          ))}
+        </div>
+      ))}
+    </nav>
   );
 }

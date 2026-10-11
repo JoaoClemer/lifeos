@@ -53,3 +53,19 @@ INSERT INTO receivables (person, description, amount_cents, date, month, account
   ('Pedro', 'Celular', 25000, date('now', 'start of month', '-1 months'), strftime('%Y-%m', 'now'),                               1, 'example-celular', 2, 4),
   ('Pedro', 'Celular', 25000, date('now', 'start of month', '-1 months'), strftime('%Y-%m', 'now', 'start of month', '+1 months'), 1, 'example-celular', 3, 4),
   ('Pedro', 'Celular', 25000, date('now', 'start of month', '-1 months'), strftime('%Y-%m', 'now', 'start of month', '+2 months'), 1, 'example-celular', 4, 4);
+
+-- LifeOS: projetos, tarefas e agenda (fictícios, relativos a hoje no fuso de São Paulo)
+INSERT INTO projects (id, name, status) VALUES (1, 'Mudança de apartamento', 'active');
+
+INSERT INTO tasks (title, priority, due_date, project_id, tags, estimate_minutes) VALUES
+  ('Renovar a CNH',          'high',   date('now', '-3 hours', '-2 days'), NULL, '["documentos"]', 60),
+  ('Pagar o condomínio',     'medium', date('now', '-3 hours'),            NULL, '["casa"]',       15),
+  ('Orçar a mudança',        'high',   date('now', '-3 hours', '+3 days'), 1,    NULL,             NULL),
+  ('Separar doações',        'low',    NULL,                               1,    NULL,             120),
+  ('Ler o livro do clube',   'medium', NULL,                               NULL, NULL,             NULL);
+
+INSERT INTO events (title, start_at, end_at, all_day, location, url, category, color, rrule) VALUES
+  ('Dentista', strftime('%Y-%m-%dT14:00', 'now', '-3 hours'), strftime('%Y-%m-%dT15:00', 'now', '-3 hours'), 0, 'Clínica Centro', NULL, 'Saúde', 'rose', NULL),
+  ('Inglês', strftime('%Y-%m-%dT19:00', 'now', '-3 hours', 'weekday 1', '-7 days'), strftime('%Y-%m-%dT20:30', 'now', '-3 hours', 'weekday 1', '-7 days'), 0, NULL, NULL, 'Estudos', 'violet', 'FREQ=WEEKLY;BYDAY=MO,WE'),
+  ('Reunião de planejamento', strftime('%Y-%m-%dT10:00', 'now', '-3 hours', '+1 day'), strftime('%Y-%m-%dT11:00', 'now', '-3 hours', '+1 day'), 0, NULL, 'https://meet.example.com/planejamento', 'Trabalho', 'blue', NULL),
+  ('Aniversário da Ana', date('now', '-3 hours', '+5 days') || 'T00:00', date('now', '-3 hours', '+6 days') || 'T00:00', 1, NULL, NULL, 'Família', 'amber', NULL);

@@ -1,12 +1,26 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { todayIn } from "../shared/month";
+import type { Occurrence } from "../shared/agenda";
+import type { Project, Task } from "../shared/tasks";
 import type { Account, Expense, Goal, Income, Installment, MonthBalance, Receivable, Recurring } from "../shared/types";
 import { api } from "./api";
 
-export type NewTab = "expense" | "installment" | "recurring" | "receivable" | "income";
+export type FinanceTab = "expense" | "installment" | "recurring" | "receivable" | "income";
+export type NewTab = "task" | "event" | FinanceTab;
+
+/** Valores iniciais ao criar um evento (ex.: dia escolhido na agenda, horário reservado para uma tarefa). */
+export interface EventDefaults {
+  date?: string;
+  title?: string;
+  taskId?: number;
+}
 
 export type SheetState =
-  | { kind: "new"; tab?: NewTab; budgetId?: number }
+  | { kind: "new"; tab?: NewTab; budgetId?: number; event?: EventDefaults; task?: Partial<Pick<Task, "due_date" | "project_id">> }
+  | { kind: "task"; item: Task }
+  | { kind: "event"; item: Occurrence }
+  | { kind: "project"; item?: Project }
+  | { kind: "more" }
   | { kind: "expense"; item: Expense }
   | { kind: "installment"; item: Installment }
   | { kind: "recurring"; item: Recurring }
@@ -30,6 +44,8 @@ interface Toast {
 }
 
 interface AppState {
+  /** Fuso do servidor (o mesmo do MCP). */
+  timezone: string;
   today: string;
   currentMonth: string;
   month: string;
@@ -51,7 +67,7 @@ function parseRoute(): Route {
   const raw = location.hash.replace(/^#\/?/, "");
   const [path, query] = raw.split("?");
   const [view, sub] = path.split("/");
-  return { view: view || "summary", sub: sub || undefined, params: new URLSearchParams(query ?? "") };
+  return { view: view || "today", sub: sub || undefined, params: new URLSearchParams(query ?? "") };
 }
 
 export function AppProvider({ children, timezone }: { children: ReactNode; timezone: string }) {
@@ -82,6 +98,7 @@ export function AppProvider({ children, timezone }: { children: ReactNode; timez
   }, []);
 
   const value: AppState = {
+    timezone,
     today,
     currentMonth,
     month,

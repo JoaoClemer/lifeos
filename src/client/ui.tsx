@@ -1,5 +1,5 @@
 import { Banknote, Check, ChevronLeft, ChevronRight, CreditCard, Landmark, QrCode, Ticket, Wallet, X } from "lucide-react";
-import { type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, useEffect, useId, useRef } from "react";
+import { type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes, useEffect, useId, useRef } from "react";
 import { formatBRL } from "../shared/money";
 import { addMonths, monthTitle } from "../shared/month";
 import type { AccountType } from "../shared/types";
@@ -121,6 +121,10 @@ export const inputCls =
 
 export function TextInput(props: InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} className={cx(inputCls, props.className)} />;
+}
+
+export function TextArea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return <textarea rows={3} {...props} className={cx(inputCls, "h-auto min-h-[5.5rem] py-2.5", props.className)} />;
 }
 
 /** Entrada de dinheiro "estilo app de banco": os dígitos preenchem da direita (5 → 0,05 → 0,54 → 5,48). */
@@ -359,12 +363,15 @@ export function Row({
   right,
   left,
   onClick,
+  label,
 }: {
   title: ReactNode;
   subtitle?: ReactNode;
   right?: ReactNode;
   left?: ReactNode;
   onClick?: () => void;
+  /** Nome acessível da linha quando o título não é texto simples. */
+  label?: string;
 }) {
   const inner = (
     <>
@@ -383,7 +390,7 @@ export function Row({
       <button
         type="button"
         onClick={onClick}
-        aria-label={typeof title === "string" ? title : undefined}
+        aria-label={label ?? (typeof title === "string" ? title : undefined)}
         className="absolute inset-0 transition hover:bg-surface-2/60 active:bg-surface-2"
       />
       <div className="pointer-events-none relative flex w-full items-center gap-3 px-4 py-3">{inner}</div>
