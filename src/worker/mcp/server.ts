@@ -1,13 +1,40 @@
 // Servidor MCP mínimo (transporte Streamable HTTP, sem sessão, respostas JSON).
 // Implementado direto sobre JSON-RPC para ficar leve no limite de CPU do plano grátis do Workers.
 import { z } from "zod";
+import { auditMcpCall } from "../activity";
 import { makeCtx, UserError } from "../lib";
-import { TOOLS } from "./tools";
+import { AGENDA_TOOLS } from "../modules/agenda/tools";
+import { TASK_TOOLS } from "../modules/tasks/tools";
+import { TODAY_TOOLS } from "../modules/today/tools";
+import { TRAINING_TOOLS } from "../modules/training/tools";
+import { TOOLS as FINANCE_TOOLS } from "./tools";
 
-const SERVER_INFO = { name: "financas", title: "Finanças pessoais", version: "0.1.0" };
+const TOOLS = [...FINANCE_TOOLS, ...TODAY_TOOLS, ...AGENDA_TOOLS, ...TASK_TOOLS, ...TRAINING_TOOLS];
+
+const SERVER_INFO = { name: "lifeos", title: "LifeOS", version: "0.2.0" };
 const LATEST_PROTOCOL = "2025-06-18";
 
-const INSTRUCTIONS = `Sistema de finanças pessoais do usuário (valores em reais, datas no fuso de São Paulo).
+const INSTRUCTIONS = `LifeOS: sistema pessoal do usuário com agenda, tarefas, treinos e finanças (valores em reais, datas e horários no fuso de São Paulo).
+
+Geral:
+- "Como está meu dia?" → revisao_diaria. Revisar ou planejar a semana → revisao_semanal.
+- Datas aceitam AAAA-MM-DD, DD/MM, "hoje" e "amanhã"; horários aceitam "14:00", "9h", "14h30".
+- Exclusões exigem confirmar: true. Chame primeiro sem confirmar, mostre ao usuário o que será excluído e só confirme se ele concordar.
+- Não invente ids: consulte (agenda, listar_tarefas, treinos_semana) para obtê-los.
+
+Agenda:
+- Consultar compromissos → agenda (periodo hoje, amanha, semana ou proximos_7_dias). Marcar → criar_evento (sem hora_inicio = dia inteiro).
+- Evento que se repete: para editar ou cancelar, informe ocorrencia (como aparece na agenda) e alcance (so_esta, esta_e_seguintes ou todas). Se o usuário não disser, pergunte.
+- Reservar um horário para uma tarefa → criar_evento com o parâmetro tarefa (não crie outra tarefa).
+
+Tarefas:
+- Anotar algo a fazer → criar_tarefa (prazo opcional). "Terminei X" → concluir_tarefa. Ver pendências → listar_tarefas.
+
+Treinos:
+- Planejar → planejar_treino. "Fiz/corri/nadei X" → registrar_treino (preenche o treino planejado do dia, sem duplicar). Ver a semana → treinos_semana.
+- Não realizado ou desmarcado → status_treino.
+
+Finanças:
 - Antes de lançar algo com cartão/orçamento/meta, se não souber o nome exato, chame listar_cadastros.
 - "Lança 50 no Nubank" → lancar_despesa. Compras parceladas → lancar_parcelado. Assinaturas/contas mensais → adicionar_fixo.
 - Gastos de almoço, transporte etc. que o usuário desconta de um valor reservado → lancar_despesa com o parâmetro orcamento.
@@ -45,6 +72,7 @@ async function callTool(params: Record<string, unknown> | undefined, env: Env) {
   try {
     const args = tool.schema.parse(params?.arguments ?? {});
     const text = await tool.run(args, makeCtx(env, "mcp"));
+    if (!tool.annotations?.readOnlyHint) await auditMcpCall(env.DB, name, args, true, text);
     return { content: [{ type: "text", text }] };
   } catch (e) {
     let text: string;
@@ -54,6 +82,7 @@ async function callTool(params: Record<string, unknown> | undefined, env: Env) {
       console.error("MCP tool error", name, e);
       text = `Erro inesperado: ${e instanceof Error ? e.message : String(e)}`;
     }
+    if (!tool.annotations?.readOnlyHint) await auditMcpCall(env.DB, name, params?.arguments ?? {}, false, text);
     return { content: [{ type: "text", text }], isError: true };
   }
 }

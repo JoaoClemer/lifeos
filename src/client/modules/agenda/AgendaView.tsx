@@ -4,16 +4,17 @@ import { addDays, daysInMonth, isValidDate, startOfWeek } from "../../../shared/
 import { addMonths, monthTitle } from "../../../shared/month";
 import { dayMonth, longDate, relativeDay, weekdayShort } from "../../dates";
 import { useApp, useData } from "../../state";
-import { Badge, Button, cx, Empty, List, Section, Segmented } from "../../ui";
+import { Badge, Button, cx, Empty, List, LoadError, Section, Segmented } from "../../ui";
 import { ListSkeleton } from "../../views/ExpensesView";
 import { TaskRow } from "../tasks/TaskRow";
+import { sessionTitle, TrainingRow } from "../training/TrainingRow";
 import { eventColor, type EventItem, EventRow } from "./EventRow";
 
 type Mode = "day" | "week" | "month";
 
 /** Itens que acontecem no dia (eventos de vários dias aparecem em todos). */
 function itemsOn(items: AgendaItem[], day: string): AgendaItem[] {
-  return items.filter((i) => (i.kind === "task_due" ? i.date === day : i.start_at.slice(0, 10) <= day && i.end_at > `${day}T00:00`));
+  return items.filter((i) => (i.kind === "event" ? i.start_at.slice(0, 10) <= day && i.end_at > `${day}T00:00` : i.date === day));
 }
 
 function range(mode: Mode, d: string): [string, string] {
@@ -31,12 +32,12 @@ function step(mode: Mode, d: string, n: number): string {
 }
 
 export function AgendaView() {
-  const { today, route, navigate, openSheet } = useApp();
+  const { today, route, navigate, openSheet, refresh } = useApp();
   const mode = (["day", "week", "month"].includes(route.sub ?? "") ? route.sub : "week") as Mode;
   const dParam = route.params.get("d");
   const d = dParam && isValidDate(dParam) ? dParam : today;
   const [from, to] = range(mode, d);
-  const items = useData<AgendaItem[]>(`/api/agenda?from=${from}&to=${to}`).data;
+  const { data: items, error } = useData<AgendaItem[]>(`/api/agenda?from=${from}&to=${to}`);
 
   const go = (m: Mode, date: string) => navigate(`agenda/${m}?d=${date}`);
   const title = mode === "day" ? longDate(d) : mode === "week" ? `${dayMonth(from)} – ${dayMonth(to, today)}` : monthTitle(d.slice(0, 7));
@@ -70,7 +71,7 @@ export function AgendaView() {
       </div>
 
       {!items ? (
-        <ListSkeleton />
+        error ? <LoadError error={error} onRetry={refresh} /> : <ListSkeleton />
       ) : mode === "day" ? (
         <DayList items={itemsOn(items, d)} day={d} onAdd={() => newEvent(d)} />
       ) : mode === "week" ? (
@@ -88,6 +89,8 @@ function ItemList({ items, day }: { items: AgendaItem[]; day: string }) {
       {items.map((i) =>
         i.kind === "event" ? (
           <EventRow key={`e${i.event_id}-${i.occurrence_start ?? ""}`} item={i} day={day} />
+        ) : i.kind === "training" ? (
+          <TrainingRow key={`w${i.session.id}`} session={i.session} />
         ) : (
           <TaskRow key={`t${i.task.id}`} task={i.task} hideDue />
         ),
@@ -97,7 +100,7 @@ function ItemList({ items, day }: { items: AgendaItem[]; day: string }) {
 }
 
 function DayList({ items, day, onAdd }: { items: AgendaItem[]; day: string; onAdd: () => void }) {
-  const events = items.filter((i) => i.kind === "event");
+  const events = items.filter((i) => i.kind !== "task_due");
   const due = items.filter((i) => i.kind === "task_due");
   if (!items.length) {
     return <Empty icon={<CalendarDays size={22} />} title="Dia livre" text="Nenhum compromisso nem prazo neste dia." action={<Button onClick={onAdd}>Novo evento</Button>} />;
@@ -105,7 +108,7 @@ function DayList({ items, day, onAdd }: { items: AgendaItem[]; day: string; onAd
   return (
     <div className="space-y-5">
       {events.length > 0 && (
-        <Section title="Compromissos">
+        <Section title="Agenda do dia">
           <ItemList items={events} day={day} />
         </Section>
       )}
@@ -178,7 +181,8 @@ function MonthGrid({
           {days.map((day) => {
             const list = itemsOn(items, day);
             const events = list.filter((i): i is EventItem => i.kind === "event");
-            const dues = list.length - events.length;
+            const trainings = list.flatMap((i) => (i.kind === "training" ? [i.session] : []));
+            const dues = list.length - events.length - trainings.length;
             return (
               <button
                 key={day}
@@ -205,6 +209,7 @@ function MonthGrid({
                   {events.slice(0, 3).map((e, i) => (
                     <span key={i} className="h-1.5 w-1.5 rounded-full" style={{ background: eventColor(e.color) }} />
                   ))}
+                  {trainings.length > 0 && <span className="h-1.5 w-1.5 rounded-sm bg-success" />}
                   {dues > 0 && <span className="h-1.5 w-1.5 rounded-full bg-warn" />}
                 </span>
                 <span className="hidden space-y-0.5 md:block">
@@ -214,8 +219,14 @@ function MonthGrid({
                       {e.title}
                     </span>
                   ))}
-                  {list.length > 3 && <span className="block px-1 text-[11px] text-muted">+{list.length - 3}</span>}
-                  {list.length <= 3 && dues > 0 && <span className="block px-1 text-[11px] text-warn">{dues} prazo{dues > 1 ? "s" : ""}</span>}
+                  {trainings.slice(0, Math.max(0, 3 - events.length)).map((s) => (
+                    <span key={s.id} className="block truncate rounded bg-success-soft px-1 text-[11px] font-medium text-success">
+                      {s.time ? `${s.time} ` : ""}
+                      {sessionTitle(s)}
+                    </span>
+                  ))}
+                  {list.length - dues > 3 && <span className="block px-1 text-[11px] text-muted">+{list.length - dues - 3}</span>}
+                  {list.length - dues <= 3 && dues > 0 && <span className="block px-1 text-[11px] text-warn">{dues} prazo{dues > 1 ? "s" : ""}</span>}
                 </span>
               </button>
             );

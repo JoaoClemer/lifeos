@@ -4,11 +4,12 @@ import { addMonths, monthLabel, monthTitle } from "../shared/month";
 import { api, setUnauthorizedHandler } from "./api";
 import { AgendaView } from "./modules/agenda/AgendaView";
 import { TasksView } from "./modules/tasks/TasksView";
+import { TrainingView } from "./modules/training/TrainingView";
 import { TodayView } from "./modules/today/TodayView";
 import { MOBILE_TABS, NAV, NAV_SECTIONS } from "./nav";
 import { SheetHost } from "./SheetHost";
 import { AppProvider, clearCache, type NewTab, useApp } from "./state";
-import { Button, cx, TextInput } from "./ui";
+import { Button, cx, ErrorBoundary, TextInput } from "./ui";
 import { ExpensesView } from "./views/ExpensesView";
 import { GoalsView } from "./views/GoalsView";
 import { ReceivablesView } from "./views/ReceivablesView";
@@ -53,17 +54,18 @@ function Shell({ onLogout }: { onLogout: () => void }) {
   const { route, navigate, openSheet, toasts } = useApp();
   const current = NAV.find((n) => n.view === route.view) ?? NAV[0];
 
-  // Atalhos do app instalado: /?novo=gasto e /?novo=tarefa abrem direto o lançamento
+  // Atalhos do app instalado: /?novo=gasto, tarefa, evento ou treino abrem direto o lançamento
   useEffect(() => {
     const novo = new URLSearchParams(location.search).get("novo");
     if (novo !== null) {
-      openSheet({ kind: "new", tab: novo === "tarefa" ? "task" : novo === "evento" ? "event" : "expense" });
+      const tabs: Record<string, NewTab> = { tarefa: "task", evento: "event", treino: "training" };
+      openSheet({ kind: "new", tab: tabs[novo] ?? "expense" });
       history.replaceState(null, "", location.pathname + location.hash);
     }
   }, [openSheet]);
 
   // O "+" abre na aba da tela atual (finanças continua abrindo em "Gasto")
-  const newTab: NewTab = current.view === "tasks" ? "task" : current.view === "agenda" ? "event" : "expense";
+  const newTab: NewTab = current.view === "tasks" ? "task" : current.view === "agenda" ? "event" : current.view === "training" ? "training" : "expense";
   const openNew = () => openSheet({ kind: "new", tab: newTab });
   const inMore = !(MOBILE_TABS as readonly string[]).includes(current.view);
   const TasksIcon = NAV[2].icon;
@@ -78,6 +80,9 @@ function Shell({ onLogout }: { onLogout: () => void }) {
       break;
     case "tasks":
       page = <TasksView />;
+      break;
+    case "training":
+      page = <TrainingView />;
       break;
     case "summary":
       page = <SummaryView />;
@@ -150,7 +155,10 @@ function Shell({ onLogout }: { onLogout: () => void }) {
           </div>
         </header>
 
-        <main className="mx-auto max-w-3xl px-4 pb-32 pt-4 md:px-8 md:pb-16 md:pt-6">{page}</main>
+        <main className="mx-auto max-w-3xl px-4 pb-32 pt-4 md:px-8 md:pb-16 md:pt-6">
+          {/* key: trocar de tela limpa um erro anterior */}
+          <ErrorBoundary key={current.view}>{page}</ErrorBoundary>
+        </main>
       </div>
 
       {/* Navegação inferior (mobile) */}

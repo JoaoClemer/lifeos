@@ -1,37 +1,65 @@
-import { CalendarDays, CheckCircle2 } from "lucide-react";
+import { Activity, CalendarDays, CalendarPlus, CheckCircle2, ListPlus, Receipt, Wallet } from "lucide-react";
 import type { ReactNode } from "react";
-import type { Today } from "../../../shared/today";
+import { formatBRL } from "../../../shared/money";
+import { monthLabel } from "../../../shared/month";
 import type { Project } from "../../../shared/tasks";
+import type { Today, Week } from "../../../shared/today";
+import { formatPlanDuration, isDoneStatus } from "../../../shared/training";
 import { longDate } from "../../dates";
-import { useApp, useData } from "../../state";
-import { LinkButton, List, Section } from "../../ui";
+import { type NewTab, useApp, useData } from "../../state";
+import { Button, Card, cx, LinkButton, List, LoadError, Money, Progress, Section } from "../../ui";
 import { ListSkeleton } from "../../views/ExpensesView";
 import { EventRow } from "../agenda/EventRow";
 import { TaskRow } from "../tasks/TaskRow";
+import { sessionTitle, TrainingRow } from "../training/TrainingRow";
 
 export function TodayView() {
-  const { navigate } = useApp();
-  const data = useData<Today>("/api/today").data;
+  const { navigate, openSheet, refresh } = useApp();
+  const { data, error } = useData<Today>("/api/today");
+  const week = useData<Week>("/api/week").data;
   const projects = new Map((useData<Project[]>("/api/projects?all=1").data ?? []).map((p) => [p.id, p]));
-  if (!data) return <ListSkeleton />;
-  const { events, upcoming, tasks } = data;
-  const taskCount = tasks.overdue.length + tasks.today.length;
+  if (!data) return error ? <LoadError error={error} onRetry={refresh} /> : <ListSkeleton />;
+  const { events, upcoming, tasks, training, finance } = data;
+  const dueToday = tasks.overdue.length + tasks.today.length;
+  const nextTraining = training.find((s) => s.status === "planned");
+  const trainingTile = !training.length
+    ? { value: "Descanso", hint: "nada planejado" }
+    : nextTraining
+      ? { value: nextTraining.planned_duration_s ? formatPlanDuration(nextTraining.planned_duration_s) : "Planejado", hint: sessionTitle(nextTraining) }
+      : { value: training.some((s) => isDoneStatus(s.status)) ? "Feito" : "—", hint: sessionTitle(training[0]) };
+  const quick = (tab: NewTab) =>
+    openSheet({ kind: "new", tab, ...(tab === "training" ? { training: { date: data.date } } : {}), ...(tab === "event" ? { event: { date: data.date } } : {}) });
+  const monthName = monthLabel(finance.month).split(" de ")[0];
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="space-y-3">
         <p className="text-2xl font-bold tracking-tight">{longDate(data.date)}</p>
-        <p className="mt-1 text-sm text-muted">
-          {events.length ? `${events.length} ${events.length === 1 ? "compromisso" : "compromissos"}` : "Nenhum compromisso"}
-          {" · "}
-          {tasks.today.length ? `${tasks.today.length} ${tasks.today.length === 1 ? "tarefa" : "tarefas"} para hoje` : "nenhuma tarefa para hoje"}
-          {tasks.overdue.length > 0 && (
-            <span className="font-semibold text-danger">
-              {" · "}
-              {tasks.overdue.length} atrasada{tasks.overdue.length > 1 ? "s" : ""}
-            </span>
-          )}
-        </p>
+        <div className="no-scrollbar -mx-1 flex gap-2 overflow-x-auto px-1 pb-0.5">
+          <QuickAction icon={<ListPlus size={16} />} label="Tarefa" onClick={() => quick("task")} />
+          <QuickAction icon={<CalendarPlus size={16} />} label="Evento" onClick={() => quick("event")} />
+          <QuickAction icon={<Activity size={16} />} label="Treino" onClick={() => quick("training")} />
+          <QuickAction icon={<Receipt size={16} />} label="Gasto" onClick={() => quick("expense")} />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Tile label="Compromissos" value={String(events.length)} hint={events.length ? nextEventHint(data) : "agenda livre"} onClick={() => navigate("agenda/day")} />
+        <Tile
+          label="Tarefas para hoje"
+          value={String(dueToday)}
+          hint={tasks.overdue.length ? `${tasks.overdue.length} atrasada${tasks.overdue.length > 1 ? "s" : ""}` : "nenhuma atrasada"}
+          tone={tasks.overdue.length ? "danger" : undefined}
+          onClick={() => navigate("tasks")}
+        />
+        <Tile label="Treino" value={trainingTile.value} hint={trainingTile.hint} onClick={() => navigate("training")} />
+        <Tile
+          label={finance.leftover_cents != null ? "Sobra prevista" : "Gastos do mês"}
+          value={formatBRL(finance.leftover_cents ?? finance.total_cents)}
+          hint={monthName}
+          tone={finance.leftover_cents != null && finance.leftover_cents < 0 ? "danger" : undefined}
+          onClick={() => navigate("summary")}
+        />
       </div>
 
       <Section title="Agenda de hoje" action={<LinkButton onClick={() => navigate("agenda/day")}>Ver agenda</LinkButton>}>
@@ -47,7 +75,7 @@ export function TodayView() {
       </Section>
 
       <Section title="Tarefas" action={<LinkButton onClick={() => navigate("tasks")}>Ver todas</LinkButton>}>
-        {taskCount + tasks.priority.length ? (
+        {dueToday + tasks.priority.length ? (
           <List>
             {tasks.overdue.map((t) => (
               <TaskRow key={t.id} task={t} projects={projects} />
@@ -64,6 +92,59 @@ export function TodayView() {
         )}
       </Section>
 
+      <Section title="Treino de hoje" action={<LinkButton onClick={() => navigate("training")}>Ver semana</LinkButton>}>
+        {training.length ? (
+          <List>
+            {training.map((s) => (
+              <TrainingRow key={s.id} session={s} />
+            ))}
+          </List>
+        ) : (
+          <button type="button" className="w-full text-left" onClick={() => quick("training")}>
+            <EmptyLine icon={<Activity size={18} />} text="Nenhum treino planejado. Toque para planejar ou registrar." />
+          </button>
+        )}
+      </Section>
+
+      <Section title={`Finanças de ${monthName}`} action={<LinkButton onClick={() => navigate("summary")}>Abrir resumo</LinkButton>}>
+        <Card className="space-y-3 p-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <Figure label="Gastos do mês" value={<Money cents={finance.total_cents} />} />
+            {finance.leftover_cents != null && (
+              <Figure label="Sobra prevista" value={<Money cents={finance.leftover_cents} className={cx(finance.leftover_cents < 0 && "text-danger")} />} />
+            )}
+            {finance.closing_cents != null && (
+              <Figure label="Saldo final previsto" value={<Money cents={finance.closing_cents} className={cx(finance.closing_cents < 0 && "text-danger")} />} />
+            )}
+          </div>
+          {finance.budgets_attention.length > 0 && (
+            <div className="space-y-2 border-t border-border pt-3">
+              {finance.budgets_attention.map((b) => (
+                <div key={b.id} className="space-y-1">
+                  <div className="flex justify-between gap-3 text-sm">
+                    <span className="font-medium">{b.description}</span>
+                    <span className={cx("num", b.remaining_cents < 0 ? "font-semibold text-danger" : "text-warn")}>
+                      {b.remaining_cents < 0 ? `estourou ${formatBRL(-b.remaining_cents)}` : `restam ${formatBRL(b.remaining_cents)}`}
+                    </span>
+                  </div>
+                  <Progress value={b.spent_cents} max={b.limit_cents} />
+                </div>
+              ))}
+            </div>
+          )}
+          {finance.receivable_pending_cents > 0 && (
+            <button type="button" className="flex w-full items-center justify-between border-t border-border pt-3 text-sm" onClick={() => navigate("receivables")}>
+              <span className="flex items-center gap-2 text-muted">
+                <Wallet size={15} /> A receber de outras pessoas
+              </span>
+              <Money cents={finance.receivable_pending_cents} className="font-semibold" />
+            </button>
+          )}
+        </Card>
+      </Section>
+
+      {week && <WeekCard week={week} />}
+
       {upcoming.length > 0 && (
         <Section title="Próximos compromissos">
           <List>
@@ -74,6 +155,77 @@ export function TodayView() {
         </Section>
       )}
     </div>
+  );
+}
+
+/** "próximo às 14:00", "dia inteiro" ou "já passaram". */
+function nextEventHint(data: Today): string {
+  const next = data.events.find((e) => !e.all_day && e.end_at > data.now);
+  if (next) return `próximo às ${next.start_at.slice(0, 10) < data.date ? "agora" : next.start_at.slice(11)}`;
+  return data.events.some((e) => e.all_day) ? "dia inteiro" : "já passaram";
+}
+
+function WeekCard({ week }: { week: Week }) {
+  const { navigate } = useApp();
+  const t = week.training;
+  const taskHint = [
+    week.tasks.due_open.length ? `${week.tasks.due_open.length} com prazo na semana` : null,
+    week.tasks.overdue ? `${week.tasks.overdue} atrasada${week.tasks.overdue > 1 ? "s" : ""}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <Section title="Esta semana">
+      <Card className="divide-y divide-border overflow-hidden">
+        <WeekLine label="Compromissos" value={String(week.events)} onClick={() => navigate("agenda/week")} />
+        <WeekLine label="Tarefas concluídas" value={String(week.tasks.done.length)} hint={taskHint || undefined} onClick={() => navigate("tasks/done")} />
+        <WeekLine
+          label="Treinos feitos"
+          value={t.planned ? `${t.done} de ${t.planned}` : String(t.done)}
+          hint={t.compliance_pct != null ? `${t.compliance_pct}% do plano até agora` : t.planned ? "nada venceu ainda" : undefined}
+          onClick={() => navigate("training")}
+        />
+      </Card>
+    </Section>
+  );
+}
+
+function WeekLine({ label, value, hint, onClick }: { label: string; value: string; hint?: string; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition hover:bg-surface-2/60">
+      <span>
+        <span className="block text-[15px] font-medium">{label}</span>
+        {hint && <span className="block text-[13px] text-muted">{hint}</span>}
+      </span>
+      <span className="num text-lg font-semibold">{value}</span>
+    </button>
+  );
+}
+
+function Tile({ label, value, hint, tone, onClick }: { label: string; value: string; hint?: string; tone?: "danger"; onClick: () => void }) {
+  return (
+    <Card onClick={onClick} className="p-3.5">
+      <p className="text-[13px] font-medium text-muted">{label}</p>
+      <p className={cx("num mt-1 truncate text-xl font-bold tracking-tight", tone === "danger" && "text-danger")}>{value}</p>
+      {hint && <p className="mt-0.5 truncate text-xs text-muted">{hint}</p>}
+    </Card>
+  );
+}
+
+function Figure({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div>
+      <p className="text-[13px] text-muted">{label}</p>
+      <p className="text-base font-semibold">{value}</p>
+    </div>
+  );
+}
+
+function QuickAction({ icon, label, onClick }: { icon: ReactNode; label: string; onClick: () => void }) {
+  return (
+    <Button variant="secondary" className="h-9 shrink-0 rounded-full px-3.5 text-sm" onClick={onClick}>
+      {icon} {label}
+    </Button>
   );
 }
 

@@ -1,9 +1,10 @@
 import { Hono } from "hono";
 import { MONTH_RE } from "../shared/month";
-import { idParam, makeCtx, UserError } from "./lib";
+import { idParam, limitParam, makeCtx, UserError } from "./lib";
 import { agendaRoutes } from "./modules/agenda/routes";
 import { tasksRoutes } from "./modules/tasks/routes";
 import { todayRoutes } from "./modules/today/routes";
+import { trainingRoutes } from "./modules/training/routes";
 import * as accounts from "./services/accounts";
 import * as balance from "./services/balance";
 import * as expenses from "./services/expenses";
@@ -58,7 +59,7 @@ api.get("/expenses", async (c) => {
       account_id: q.account_id ? Number(q.account_id) : undefined,
       budget_id: q.budget_id ? Number(q.budget_id) : undefined,
       search: q.search || undefined,
-      limit: q.limit ? Number(q.limit) : undefined,
+      limit: limitParam(q.limit),
     }),
   );
 });
@@ -164,4 +165,5 @@ api.delete("/goal-entries/:id", async (c) => {
 // ---- Módulos do LifeOS ----
 api.route("/", tasksRoutes);
 api.route("/", agendaRoutes);
+api.route("/", trainingRoutes);
 api.route("/", todayRoutes);

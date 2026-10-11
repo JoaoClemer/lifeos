@@ -58,6 +58,9 @@ export interface TaskFilter {
   /** Prazo dentro do intervalo (inclusive). */
   due_from?: string;
   due_to?: string;
+  /** Concluídas entre estes dias (inclusive). */
+  completed_from?: string;
+  completed_to?: string;
   /** Omitido: só tarefas principais. Número: subtarefas dessa tarefa. */
   parent_id?: number;
   ids?: number[];
@@ -84,6 +87,9 @@ export async function listTasks(ctx: Ctx, f: TaskFilter = {}): Promise<Task[]> {
   if (f.search) (where.push("(t.title LIKE ? OR t.notes LIKE ?)"), args.push(`%${f.search}%`, `%${f.search}%`));
   if (f.due_from) (where.push("t.due_date >= ?"), args.push(f.due_from));
   if (f.due_to) (where.push("t.due_date <= ?"), args.push(f.due_to));
+  // completed_at é data e hora local ('YYYY-MM-DDTHH:MM'): compara pelo dia
+  if (f.completed_from) (where.push("substr(t.completed_at, 1, 10) >= ?"), args.push(f.completed_from));
+  if (f.completed_to) (where.push("substr(t.completed_at, 1, 10) <= ?"), args.push(f.completed_to));
   const order = status === "done" ? "t.completed_at DESC, t.id DESC" : "t.id";
   const sql = `${SELECT} WHERE ${where.join(" AND ")} ORDER BY ${order} LIMIT ${Math.min(f.limit ?? 500, 1000)}`;
   const tasks = (await ctx.db.prepare(sql).bind(...args).all<TaskRow>()).results.map(decorate);
@@ -188,6 +194,15 @@ export async function resolveTask(ctx: Ctx, title: string, status: TaskFilter["s
 async function listSubtasksOfOpen(ctx: Ctx, status: TaskFilter["status"]): Promise<Task[]> {
   const sql = `${SELECT} WHERE t.parent_id IS NOT NULL${status === "open" ? " AND t.status <> 'done'" : status === "done" ? " AND t.status = 'done'" : ""} LIMIT 1000`;
   return (await ctx.db.prepare(sql).all<TaskRow>()).results.map(decorate);
+}
+
+/** Tarefa com o mesmo título criada há pouco (evita duplicar quando o Claude repete uma chamada). */
+export async function findRecentTask(ctx: Ctx, title: string, minutes = 10): Promise<Task | null> {
+  const row = await ctx.db
+    .prepare("SELECT id FROM tasks WHERE lower(title) = lower(?) AND parent_id IS NULL AND created_at >= datetime('now', ?) ORDER BY id DESC LIMIT 1")
+    .bind(title.trim(), `-${minutes} minutes`)
+    .first<{ id: number }>();
+  return row ? getTask(ctx, row.id) : null;
 }
 
 /** Etiquetas já usadas, das mais frequentes para as menos. */

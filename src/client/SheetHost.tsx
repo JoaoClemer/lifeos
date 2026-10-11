@@ -10,7 +10,8 @@ import { RecurringForm } from "./forms/RecurringForm";
 import { EventForm } from "./modules/agenda/EventForm";
 import { ProjectForm } from "./modules/tasks/ProjectForm";
 import { TaskForm } from "./modules/tasks/TaskForm";
-import { NAV_SECTIONS } from "./nav";
+import { TrainingForm } from "./modules/training/TrainingForm";
+import { MOBILE_TABS, NAV_SECTIONS } from "./nav";
 import { type EventDefaults, type FinanceTab, type NewTab, useApp, useData } from "./state";
 import { monthTitle } from "../shared/month";
 import type { Task } from "../shared/tasks";
@@ -25,29 +26,32 @@ const FINANCE_TABS: { value: FinanceTab; label: string }[] = [
   { value: "income", label: "Entrada" },
 ];
 
-type Group = "task" | "event" | "finance";
+type Group = "task" | "event" | "training" | "finance";
 
 function NewEntry({
   tab: initial,
   budgetId,
   event,
   task,
+  training,
   onDone,
 }: {
   tab?: NewTab;
   budgetId?: number;
   event?: EventDefaults;
   task?: Partial<Pick<Task, "due_date" | "project_id">>;
+  training?: { date?: string };
   onDone: () => void;
 }) {
   const [tab, setTab] = useState<NewTab>(initial ?? "expense");
-  const group: Group = tab === "task" || tab === "event" ? tab : "finance";
+  const group: Group = tab === "task" || tab === "event" || tab === "training" ? tab : "finance";
   return (
     <div className="space-y-4">
       <Segmented<Group>
         options={[
           { value: "task", label: "Tarefa" },
           { value: "event", label: "Evento" },
+          { value: "training", label: "Treino" },
           { value: "finance", label: "Finanças" },
         ]}
         value={group}
@@ -56,6 +60,7 @@ function NewEntry({
       {group === "finance" && <Segmented<FinanceTab> options={FINANCE_TABS} value={tab as FinanceTab} onChange={setTab} />}
       {tab === "task" && <TaskForm key="t" defaults={task} onDone={onDone} />}
       {tab === "event" && <EventForm key="v" defaults={event} onDone={onDone} />}
+      {tab === "training" && <TrainingForm key="w" defaults={training} onDone={onDone} />}
       {tab === "expense" && <ExpenseForm key="e" budgetId={budgetId} onDone={onDone} />}
       {tab === "installment" && <InstallmentForm key="i" onDone={onDone} />}
       {tab === "recurring" && <RecurringForm key="r" onDone={onDone} />}
@@ -73,13 +78,19 @@ export function SheetHost() {
     case "new":
       return (
         <Sheet title="Novo" onClose={closeSheet}>
-          <NewEntry tab={sheet.tab} budgetId={sheet.budgetId} event={sheet.event} task={sheet.task} onDone={done} />
+          <NewEntry tab={sheet.tab} budgetId={sheet.budgetId} event={sheet.event} task={sheet.task} training={sheet.training} onDone={done} />
         </Sheet>
       );
     case "task":
       return (
         <Sheet title={sheet.item.parent_id ? "Subtarefa" : "Tarefa"} onClose={closeSheet}>
           <TaskForm item={sheet.item} onDone={done} />
+        </Sheet>
+      );
+    case "training":
+      return (
+        <Sheet title="Treino" onClose={closeSheet}>
+          <TrainingForm item={sheet.item} onDone={done} />
         </Sheet>
       );
     case "event":
@@ -170,8 +181,10 @@ function MoreMenu({ onDone }: { onDone: () => void }) {
   const { route, navigate } = useApp();
   return (
     <nav className="space-y-4 pb-2">
-      {NAV_SECTIONS.filter((s) => s.label || s.items.some((n) => n.section === "system")).map((s) => (
-        <div key={s.label ?? "system"} className="space-y-1">
+      {NAV_SECTIONS.map((s) => ({ ...s, items: s.items.filter((n) => !(MOBILE_TABS as readonly string[]).includes(n.view)) }))
+        .filter((s) => s.items.length)
+        .map((s) => (
+        <div key={s.items[0].section} className="space-y-1">
           {s.label && <p className="px-1 pb-1 text-xs font-semibold uppercase tracking-wide text-muted">{s.label}</p>}
           {s.items.map((n) => (
             <button

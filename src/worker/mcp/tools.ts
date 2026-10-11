@@ -12,6 +12,7 @@ import * as installments from "../services/installments";
 import * as receivables from "../services/receivables";
 import * as recurring from "../services/recurring";
 import * as summary from "../services/summary";
+import { type Tool, tool } from "./tool";
 
 // ---------- helpers ----------
 
@@ -59,17 +60,8 @@ async function accountNames(ctx: Ctx): Promise<Map<number, string>> {
 
 // ---------- definição das ferramentas ----------
 
-interface Tool<S extends z.ZodObject> {
-  name: string;
-  title: string;
-  description: string;
-  schema: S;
-  annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean; idempotentHint?: boolean; openWorldHint?: boolean };
-  run: (args: z.output<S>, ctx: Ctx) => Promise<string>;
-}
-const tool = <S extends z.ZodObject>(t: Tool<S>) => t as unknown as Tool<z.ZodObject>;
-
-export const TOOLS: Tool<z.ZodObject>[] = [
+/** Ferramentas do módulo de finanças. */
+export const TOOLS: Tool[] = [
   tool({
     name: "resumo_mes",
     title: "Resumo do mês",

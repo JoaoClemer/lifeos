@@ -159,7 +159,7 @@ export async function exportAll(ctx: Ctx) {
   const tables = [
     "accounts", "recurring", "recurring_months", "installments", "expenses", "receivables", "incomes", "month_balances", "goals", "goal_entries", "settings",
     // LifeOS
-    "projects", "tasks", "events", "activity_log",
+    "projects", "tasks", "events", "activity_log", "training_sessions",
   ];
   const results = await ctx.db.batch(tables.map((t) => ctx.db.prepare(`SELECT * FROM ${t}`)));
   return {

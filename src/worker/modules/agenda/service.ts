@@ -186,6 +186,15 @@ export async function listOccurrences(ctx: Ctx, from: string, to: string): Promi
   );
 }
 
+/** Evento com o mesmo título e início criado há pouco (evita duplicar quando o Claude repete uma chamada). */
+export async function findRecentEvent(ctx: Ctx, title: string, startAt: string, minutes = 10): Promise<CalendarEvent | null> {
+  const row = await ctx.db
+    .prepare(`SELECT ${COLS} FROM events WHERE series_id IS NULL AND lower(title) = lower(?) AND start_at = ? AND created_at >= datetime('now', ?) ORDER BY id DESC LIMIT 1`)
+    .bind(title.trim(), startAt, `-${minutes} minutes`)
+    .first<Row>();
+  return row ? decorate(row) : null;
+}
+
 /** Eventos ligados a uma tarefa (horários reservados para ela). */
 export async function listTaskEvents(ctx: Ctx, taskId: number): Promise<CalendarEvent[]> {
   const rows = await ctx.db.prepare(`SELECT ${COLS} FROM events WHERE task_id = ? AND cancelled = 0 ORDER BY start_at`).bind(taskId).all<Row>();
