@@ -37,6 +37,14 @@ export function idParam(v: string): number {
   return n;
 }
 
+/** Limite de itens vindo da URL (?limit=): inteiro positivo; vazio = padrão do service. */
+export function limitParam(v: string | undefined): number | undefined {
+  if (!v) return undefined;
+  const n = Number(v);
+  if (!Number.isInteger(n) || n <= 0) throw new UserError("limit inválido (use um número inteiro positivo)");
+  return n;
+}
+
 /** D1 não aceita `undefined` em bind. */
 export function nn<T>(v: T | undefined): T | null {
   return v === undefined ? null : v;

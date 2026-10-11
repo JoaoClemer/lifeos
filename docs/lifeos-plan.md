@@ -595,6 +595,28 @@ Ajustes em relação ao plano:
 - **Nome do servidor.** `serverInfo` passou a "lifeos". A URL e o token não mudam, então o conector continua funcionando.
 - **Datas e horários.** Aceitam "hoje", "amanhã", "DD/MM", "9h" e "14h30", para o Claude não precisar calcular.
 
+### Fase 6 (11/10/2026): concluída
+
+- **Robustez:**
+  - `?limit=` inválido passou a dar erro 400, em vez de erro de SQL. A rota de gastos tinha o mesmo problema e foi corrigida também.
+  - Os modais prendem o foco e devolvem o foco ao fechar.
+  - Um erro numa tela não derruba o app.
+  - As telas novas mostram o erro de carregamento com "Tentar de novo".
+- **Celular e tema escuro:** nenhuma tela nem formulário transborda a largura de 375 px. As cores dos eventos têm versão para o tema escuro.
+- **Ensaio do release com os dados reais de produção** (backup de 11/10/2026, carregado só no banco local):
+  - A (código no ar, banco atual) = B (código no ar, depois das migrations 0005–0008): 73 arquivos idênticos. O app atual funciona normalmente no intervalo entre migrar e publicar.
+  - A × C (código novo): 72 de 73 arquivos idênticos (todos os resultados de finanças em 7 meses). Só a lista de ferramentas do MCP muda: as 19 de finanças estão iguais e as 17 novas vêm depois.
+  - Todas as rotas novas responderam 200 com os dados reais, e o backup cobre as 16 tabelas.
+- **CPU no plano grátis:** não dá para medir nos testes (o runtime congela o relógio entre operações). Conferir no observability do Workers depois do deploy.
+
+### Publicação (quando as Fases 2 a 6 estiverem na `main`)
+
+1. Backup da produção: `npx wrangler d1 export DB --remote --output backups/prod-<data>.sql`.
+2. `npm run db:migrate:remote` (aplica 0005–0008; só cria tabelas).
+3. `npm run deploy`.
+4. Conferir pelo conector do Claude: `resumo_mes` do mês igual ao de antes do deploy, e `revisao_diaria` funcionando.
+5. **Rollback, se necessário:** publicar de novo o commit anterior. As tabelas novas podem ficar, porque o código antigo as ignora.
+
 ## 10. Decisões aprovadas (11/10/2026)
 
 1. **Barra inferior no celular:** Hoje · Agenda · ＋ · Tarefas · Mais (Treinos, Finanças, Ajustes).

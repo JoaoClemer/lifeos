@@ -4,7 +4,7 @@ import { addDays } from "../../../shared/datetime";
 import { dueGroup, type DueGroup, PROJECT_STATUS_LABEL, type Project, type Task, type TaskPriority } from "../../../shared/tasks";
 import { relativeDay } from "../../dates";
 import { useApp, useData } from "../../state";
-import { Badge, Button, Card, Chips, Empty, List, Progress, Section, Segmented } from "../../ui";
+import { Badge, Button, Card, Chips, Empty, List, LoadError, Progress, Section, Segmented } from "../../ui";
 import { ListSkeleton } from "../../views/ExpensesView";
 import { TaskRow } from "./TaskRow";
 
@@ -51,7 +51,8 @@ function OpenTasks() {
   const query = new URLSearchParams({ status: "open" });
   if (projectFilter) query.set("project_id", String(projectFilter));
   if (priority) query.set("priority", priority);
-  const tasks = useData<Task[]>(`/api/tasks?${query}`).data;
+  const { data: tasks, error } = useData<Task[]>(`/api/tasks?${query}`);
+  const { refresh } = useApp();
   const doneToday = (useData<Task[]>("/api/tasks?status=done&limit=100").data ?? []).filter((t) => t.completed_at?.startsWith(today)).length;
   const projects = useProjects();
   const active = (projects.list ?? []).filter((p) => p.status === "active" || p.id === projectFilter);
@@ -59,7 +60,7 @@ function OpenTasks() {
   const setProject = (id: number | null) => navigate(id ? `tasks/open?project=${id}` : "tasks/open");
   const newTask = () => openSheet({ kind: "new", tab: "task", task: { project_id: projectFilter } });
 
-  if (!tasks) return <ListSkeleton />;
+  if (!tasks) return error ? <LoadError error={error} onRetry={refresh} /> : <ListSkeleton />;
   const weekEnd = addDays(today, 7);
   const groups = GROUPS.map((g) => ({ ...g, items: tasks.filter((t) => dueGroup(t, today, weekEnd) === g.key) })).filter((g) => g.items.length);
   const overdue = groups.find((g) => g.key === "overdue")?.items.length ?? 0;

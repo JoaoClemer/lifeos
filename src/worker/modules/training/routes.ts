@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { SPORTS, type Sport } from "../../../shared/training";
-import { idParam, makeCtx, UserError } from "../../lib";
+import { idParam, limitParam, makeCtx, UserError } from "../../lib";
 import * as training from "./service";
 
 export const trainingRoutes = new Hono<{ Bindings: Env }>();
@@ -24,7 +24,7 @@ trainingRoutes.get("/training/history", async (c) =>
     await training.listHistory(ctxOf(c), {
       sport: sportParam(c.req.query("sport")),
       before: c.req.query("before") || undefined,
-      limit: c.req.query("limit") ? Number(c.req.query("limit")) : undefined,
+      limit: limitParam(c.req.query("limit")),
     }),
   ),
 );
