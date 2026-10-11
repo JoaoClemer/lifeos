@@ -4,6 +4,7 @@ import { idParam, makeCtx, UserError } from "./lib";
 import { agendaRoutes } from "./modules/agenda/routes";
 import { tasksRoutes } from "./modules/tasks/routes";
 import { todayRoutes } from "./modules/today/routes";
+import { trainingRoutes } from "./modules/training/routes";
 import * as accounts from "./services/accounts";
 import * as balance from "./services/balance";
 import * as expenses from "./services/expenses";
@@ -164,4 +165,5 @@ api.delete("/goal-entries/:id", async (c) => {
 // ---- Módulos do LifeOS ----
 api.route("/", tasksRoutes);
 api.route("/", agendaRoutes);
+api.route("/", trainingRoutes);
 api.route("/", todayRoutes);

@@ -164,7 +164,7 @@ describe("agenda unificada e Hoje", () => {
     await createEvent(ctx, { title: "Imposto de renda", start: "2026-10-15T20:00", task_id: t.id });
     await createEvent(ctx, { title: "Dentista", start: "2026-10-15T14:00" });
     const agenda = await getAgenda(ctx, "2026-10-15", "2026-10-16");
-    expect(agenda.map((i) => (i.kind === "event" ? `evento ${i.title} ${i.task?.status ?? ""}` : `prazo ${i.task.title} ${i.date}`))).toEqual([
+    expect(agenda.map((i) => (i.kind === "event" ? `evento ${i.title} ${i.task?.status ?? ""}` : i.kind === "task_due" ? `prazo ${i.task.title} ${i.date}` : "treino"))).toEqual([
       "evento Dentista ",
       "evento Imposto de renda todo",
       "prazo Imposto de renda 2026-10-16",

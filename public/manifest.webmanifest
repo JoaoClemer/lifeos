@@ -15,6 +15,7 @@
   ],
   "shortcuts": [
     { "name": "Lançar gasto", "url": "/?novo=gasto", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] },
-    { "name": "Nova tarefa", "url": "/?novo=tarefa", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] }
+    { "name": "Nova tarefa", "url": "/?novo=tarefa", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Registrar treino", "url": "/?novo=treino", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] }
   ]
 }

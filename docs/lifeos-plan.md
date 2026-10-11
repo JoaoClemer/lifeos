@@ -570,6 +570,16 @@ Ajustes em relação ao plano:
 - **Visões da agenda.** Semana e dia são listas por dia, e o mês é uma grade. Não fiz grade de horários (estilo Google Calendar), por ser mais pesada no celular. Fica como evolução se fizer falta.
 - **Tarefas recorrentes e lembretes** continuam fora do MVP.
 
+### Fase 3 (11/10/2026): concluída
+
+Ajustes em relação ao plano:
+
+- **Coluna `unplanned`.** Para o treino registrado sem planejamento, a coluna se chama `unplanned` (1 = sem plano), em vez de `planned`, para não confundir com o status "planejado".
+- **Cumprimento.** O treino de hoje ainda pendente não conta como falta: entra na conta só depois de registrado (feito ou não realizado), ou a partir de amanhã.
+- **"Feito conforme o planejado".** Ao marcar como realizado sem informar números, o resultado copia duração e distância do plano. O plano continua guardado em colunas próprias.
+- **`recordWorkout`.** Já existe para o MCP da Fase 5. Se houver um treino planejado da modalidade no dia, ele é preenchido; senão, é criado um treino sem plano. Se houver dois planejados iguais no dia, pergunta qual.
+- **"Copiar o plano da semana anterior".** Acrescentei esse atalho para o planejamento semanal. Os cancelados e os sem plano não são copiados.
+
 ## 10. Decisões aprovadas (11/10/2026)
 
 1. **Barra inferior no celular:** Hoje · Agenda · ＋ · Tarefas · Mais (Treinos, Finanças, Ajustes).

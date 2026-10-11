@@ -1,6 +1,7 @@
 // Tela "Hoje": composição dos módulos (só leitura). Cada item vem do módulo dono, sem cópias.
 import type { AgendaItem } from "./agenda";
 import type { Task } from "./tasks";
+import type { TrainingSession } from "./training";
 
 export type EventItem = Extract<AgendaItem, { kind: "event" }>;
 
@@ -17,4 +18,6 @@ export interface Today {
     /** Alta prioridade sem prazo ou com prazo mais adiante (no máximo 5). */
     priority: Task[];
   };
+  /** Treinos de hoje (planejados e realizados). */
+  training: TrainingSession[];
 }

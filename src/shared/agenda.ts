@@ -1,6 +1,7 @@
 // Agenda: formatos da API. Horários no relógio local ('YYYY-MM-DDTHH:MM'); fim exclusivo.
 // Evento de dia inteiro: início T00:00 do primeiro dia e fim T00:00 do dia seguinte ao último.
 import type { Task } from "./tasks";
+import type { TrainingSession } from "./training";
 
 export interface CalendarEvent {
   id: number;
@@ -51,7 +52,8 @@ export type EditScope = "this" | "following" | "all";
 /** Item da agenda unificada: cada um aponta para a entidade dona (nada é copiado entre módulos). */
 export type AgendaItem =
   | ({ kind: "event"; task: Pick<Task, "id" | "title" | "status"> | null } & Occurrence)
-  | { kind: "task_due"; date: string; task: Task };
+  | { kind: "task_due"; date: string; task: Task }
+  | { kind: "training"; date: string; session: TrainingSession };
 
 /** Cores de evento (nomes; o app define o tom de cada uma no tema claro e escuro). */
 export const EVENT_COLORS = ["teal", "blue", "violet", "amber", "rose", "slate"] as const;
