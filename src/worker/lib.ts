@@ -14,11 +14,14 @@ export interface Ctx {
   db: D1Database;
   today: string;
   month: string;
+  /** Fuso IANA do app (ex.: America/Sao_Paulo). */
+  timezone: string;
 }
 
 export function makeCtx(env: Env): Ctx {
-  const today = todayIn(env.TIMEZONE || "America/Sao_Paulo");
-  return { db: env.DB, today, month: monthOf(today) };
+  const timezone = env.TIMEZONE || "America/Sao_Paulo";
+  const today = todayIn(timezone);
+  return { db: env.DB, today, month: monthOf(today), timezone };
 }
 
 /** D1 não aceita `undefined` em bind. */
