@@ -2,11 +2,12 @@
 // Usa apenas funções públicas dos services de cada módulo (nenhum SQL nas tabelas deles).
 import type { AgendaItem } from "../../../shared/agenda";
 import { addDays, isValidDate, startOfWeek } from "../../../shared/datetime";
-import type { EventItem, Today, TodayFinance, Week } from "../../../shared/today";
+import type { EventItem, Today, TodayFinance, TodaySpending, Week } from "../../../shared/today";
 import { type Ctx, UserError } from "../../lib";
 import { listOccurrences } from "../agenda/service";
 import { listTasks } from "../tasks/service";
 import { listSessions, weekStats } from "../training/service";
+import { listExpenses } from "../../services/expenses";
 import { getSummary } from "../../services/summary";
 
 /** Posição do item no dia: pelo horário; treinos sem horário depois dos de dia inteiro; prazos de tarefas no fim. */
@@ -51,6 +52,16 @@ export async function getFinance(ctx: Ctx): Promise<TodayFinance> {
   };
 }
 
+/** Gastos avulsos com data no dia (pela data da compra, não pelo mês da fatura). */
+export async function getSpending(ctx: Ctx, date: string): Promise<TodaySpending> {
+  const items = await listExpenses(ctx, { date });
+  return {
+    items,
+    total_cents: items.reduce((s, e) => s + e.amount_cents, 0),
+    shared_cents: items.reduce((s, e) => s + e.shared_cents, 0),
+  };
+}
+
 /** Semana (segunda a domingo) da data: compromissos, tarefas e treinos. */
 export async function getWeek(ctx: Ctx, date: string): Promise<Week> {
   if (!isValidDate(date)) throw new UserError("Data inválida (use YYYY-MM-DD)");
@@ -68,7 +79,12 @@ export async function getWeek(ctx: Ctx, date: string): Promise<Week> {
 
 export async function getToday(ctx: Ctx): Promise<Today> {
   const weekEnd = addDays(ctx.today, 7);
-  const [agenda, open, finance] = await Promise.all([getAgenda(ctx, ctx.today, weekEnd), listTasks(ctx, {}), getFinance(ctx)]);
+  const [agenda, open, finance, spending] = await Promise.all([
+    getAgenda(ctx, ctx.today, weekEnd),
+    listTasks(ctx, {}),
+    getFinance(ctx),
+    getSpending(ctx, ctx.today),
+  ]);
   const events = agenda.filter((i): i is EventItem => i.kind === "event");
   return {
     date: ctx.today,
@@ -82,5 +98,6 @@ export async function getToday(ctx: Ctx): Promise<Today> {
     },
     training: agenda.flatMap((i) => (i.kind === "training" && i.date === ctx.today ? [i.session] : [])),
     finance,
+    spending,
   };
 }

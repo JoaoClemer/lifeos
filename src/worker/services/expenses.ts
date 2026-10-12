@@ -39,6 +39,8 @@ const SELECT = `SELECT e.id, e.description, e.amount_cents, e.date, e.month, e.a
 
 export interface ExpenseFilter {
   month?: string;
+  /** Data da compra ('YYYY-MM-DD'), independente do mês da fatura. */
+  date?: string;
   account_id?: number;
   budget_id?: number;
   search?: string;
@@ -49,6 +51,7 @@ export async function listExpenses(ctx: Ctx, f: ExpenseFilter): Promise<Expense[
   const where: string[] = [];
   const args: (string | number)[] = [];
   if (f.month) (where.push("e.month = ?"), args.push(f.month));
+  if (f.date) (where.push("e.date = ?"), args.push(f.date));
   if (f.account_id) (where.push("e.account_id = ?"), args.push(f.account_id));
   if (f.budget_id) (where.push("e.budget_id = ?"), args.push(f.budget_id));
   if (f.search) (where.push("e.description LIKE ?"), args.push(`%${f.search}%`));

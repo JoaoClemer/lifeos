@@ -8,18 +8,23 @@ import { formatPlanDuration, isDoneStatus } from "../../../shared/training";
 import { longDate } from "../../dates";
 import { type NewTab, useApp, useData } from "../../state";
 import { Button, Card, cx, LinkButton, List, LoadError, Money, Progress, Section } from "../../ui";
+import { useAccounts } from "../../forms/common";
+import { ExpenseRow } from "../../views/ExpenseRow";
 import { ListSkeleton } from "../../views/ExpensesView";
+import type { Recurring } from "../../../shared/types";
 import { EventRow } from "../agenda/EventRow";
 import { TaskRow } from "../tasks/TaskRow";
 import { sessionTitle, TrainingRow } from "../training/TrainingRow";
 
 export function TodayView() {
-  const { navigate, openSheet, refresh } = useApp();
+  const { navigate, openSheet, refresh, currentMonth } = useApp();
   const { data, error } = useData<Today>("/api/today");
   const week = useData<Week>("/api/week").data;
   const projects = new Map((useData<Project[]>("/api/projects?all=1").data ?? []).map((p) => [p.id, p]));
+  const accounts = new Map(useAccounts().map((a) => [a.id, a]));
+  const budgets = new Map((useData<Recurring[]>(`/api/recurring?month=${currentMonth}&all=1`).data ?? []).map((r) => [r.id, r]));
   if (!data) return error ? <LoadError error={error} onRetry={refresh} /> : <ListSkeleton />;
-  const { events, upcoming, tasks, training, finance } = data;
+  const { events, upcoming, tasks, training, finance, spending } = data;
   const dueToday = tasks.overdue.length + tasks.today.length;
   const nextTraining = training.find((s) => s.status === "planned");
   const trainingTile = !training.length
@@ -102,6 +107,35 @@ export function TodayView() {
         ) : (
           <button type="button" className="w-full text-left" onClick={() => quick("training")}>
             <EmptyLine icon={<Activity size={18} />} text="Nenhum treino planejado. Toque para planejar ou registrar." />
+          </button>
+        )}
+      </Section>
+
+      <Section
+        title="Gastos de hoje"
+        action={spending.items.length > 0 && <Money cents={spending.total_cents} className="text-[15px] font-bold" />}
+      >
+        {spending.items.length ? (
+          <>
+            <List>
+              {spending.items.map((e) => (
+                <ExpenseRow
+                  key={e.id}
+                  expense={e}
+                  account={e.account_id ? accounts.get(e.account_id) : undefined}
+                  budget={e.budget_id ? budgets.get(e.budget_id) : undefined}
+                />
+              ))}
+            </List>
+            {spending.shared_cents > 0 && (
+              <p className="px-1 text-[13px] text-muted">
+                Total da sua parte. Mais {formatBRL(spending.shared_cents)} de outras pessoas, a receber.
+              </p>
+            )}
+          </>
+        ) : (
+          <button type="button" className="w-full text-left" onClick={() => quick("expense")}>
+            <EmptyLine icon={<Receipt size={18} />} text="Nenhum gasto lançado hoje. Toque para lançar." />
           </button>
         )}
       </Section>

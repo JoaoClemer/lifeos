@@ -32,6 +32,13 @@ export const TODAY_TOOLS: Tool[] = [
           `${f.closing_cents != null ? ` · saldo final previsto ${brl(f.closing_cents)}` : ""}` +
           `${f.receivable_pending_cents ? ` · a receber ${brl(f.receivable_pending_cents)}` : ""}`,
       );
+      const sp = t.spending;
+      lines.push(
+        sp.items.length
+          ? `Gastos de hoje: ${brl(sp.total_cents)} em ${sp.items.length} lançamento(s)${sp.shared_cents ? ` (+ ${brl(sp.shared_cents)} de outras pessoas, a receber)` : ""}`
+          : "Gastos de hoje: nenhum lançado.",
+      );
+      for (const e of sp.items) lines.push(`• ${e.description}: ${brl(e.amount_cents)}`);
       for (const b of f.budgets_attention) {
         lines.push(`• Orçamento ${b.description}: ${b.remaining_cents < 0 ? `estourou ${brl(-b.remaining_cents)}` : `restam ${brl(b.remaining_cents)}`}`);
       }

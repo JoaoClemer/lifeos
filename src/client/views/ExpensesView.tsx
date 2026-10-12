@@ -5,6 +5,7 @@ import { monthLabel } from "../../shared/month";
 import type { Account, Expense, Installment, Recurring } from "../../shared/types";
 import { api } from "../api";
 import { useAccounts } from "../forms/common";
+import { ExpenseRow } from "./ExpenseRow";
 import { type NewTab, useApp, useData, useMutation } from "../state";
 import { AccountIcon, Badge, Button, CheckCircle, Chips, cx, Empty, List, Money, Progress, Row, Section, Segmented } from "../ui";
 
@@ -51,7 +52,7 @@ const dayLabel = (date: string) => {
 };
 
 function OneOffList() {
-  const { month, route, navigate, openSheet } = useApp();
+  const { month, route, navigate } = useApp();
   const accountFilter = route.params.get("account") ? Number(route.params.get("account")) : null;
   const budgetFilter = route.params.get("budget") ? Number(route.params.get("budget")) : null;
   const expenses = useData<Expense[]>(`/api/expenses?month=${month}`).data;
@@ -111,30 +112,14 @@ function OneOffList() {
               <span className="num">{formatBRL(items.reduce((s, e) => s + e.amount_cents, 0))}</span>
             </div>
             <List>
-              {items.map((e) => {
-                const acc = e.account_id ? accs.get(e.account_id) : undefined;
-                const budget = e.budget_id ? budgets.get(e.budget_id) : undefined;
-                return (
-                  <Row
-                    key={e.id}
-                    title={e.description}
-                    subtitle={
-                      <>
-                        {acc && (
-                          <span className="inline-flex items-center gap-1">
-                            <AccountIcon type={acc.type} size={13} /> {acc.name}
-                          </span>
-                        )}
-                        {budget && <Badge tone="accent">{budget.description}</Badge>}
-                        {e.shared_cents > 0 && <Badge tone="success">+{formatBRL(e.shared_cents)} a receber</Badge>}
-                        {e.month !== e.date.slice(0, 7) && <Badge>fatura {monthLabel(e.month, true)}</Badge>}
-                      </>
-                    }
-                    right={<Money cents={e.amount_cents} className="font-semibold" />}
-                    onClick={() => openSheet({ kind: "expense", item: e })}
-                  />
-                );
-              })}
+              {items.map((e) => (
+                <ExpenseRow
+                  key={e.id}
+                  expense={e}
+                  account={e.account_id ? accs.get(e.account_id) : undefined}
+                  budget={e.budget_id ? budgets.get(e.budget_id) : undefined}
+                />
+              ))}
             </List>
           </section>
         ))

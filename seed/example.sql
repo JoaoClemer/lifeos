@@ -77,3 +77,8 @@ INSERT INTO training_sessions (sport, title, workout_type, date, time, planned_d
   ('run',      'Intervalado', 'intervals', date('now', '-3 hours'),          '18:30', 3300, 9000,  'forte',  '15 min aquecimento, 6x800 m, 10 min solto', 'planned', NULL, NULL, NULL, NULL),
   ('swim',     NULL,        'technique', date('now', '-3 hours', '+1 day'),  '07:00', 2700, 2000,  NULL,     NULL,                                  'planned', NULL, NULL, NULL, NULL),
   ('run',      'Longão',    'long',      date('now', '-3 hours', '+3 days'), '07:00', 6600, 18000, 'Z2',     NULL,                                  'planned', NULL, NULL, NULL, NULL);
+
+-- Gastos de hoje (aparecem na tela Hoje)
+INSERT INTO expenses (description, amount_cents, date, month, account_id, budget_id) VALUES
+  ('Café da manhã', 1290, date('now', '-3 hours'), strftime('%Y-%m', 'now', '-3 hours'), 2, NULL),
+  ('Almoço',        3450, date('now', '-3 hours'), strftime('%Y-%m', 'now', '-3 hours'), 3, 5);
