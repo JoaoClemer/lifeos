@@ -1,7 +1,7 @@
 // Lançamentos: gasto dividido, exclusão, devedor parcelado e ajuste de fixos.
 import { env } from "cloudflare:workers";
 import { beforeEach, describe, expect, it } from "vitest";
-import { createExpense, deleteExpense, getExpense } from "../../src/worker/services/expenses";
+import { createExpense, deleteExpense, getExpense, listExpenses } from "../../src/worker/services/expenses";
 import { createReceivable, listReceivables, markReceived } from "../../src/worker/services/receivables";
 import { getRecurring, setRecurringMonth } from "../../src/worker/services/recurring";
 import { resetFinance, testCtx } from "../fixtures/finance";
@@ -57,6 +57,15 @@ describe("gasto dividido", () => {
     const ids = (await listReceivables(ctx, { status: "all" })).map((r) => r.id);
     expect(ids).not.toContain(anaId);
     expect(ids).toContain(brunoId);
+  });
+});
+
+describe("filtro por data da compra", () => {
+  it("encontra pela data mesmo quando a fatura é de outro mês", async () => {
+    // Farmácia: comprada em 06/10 no Cartão B (fecha dia 5), entra na fatura de novembro
+    const byDate = await listExpenses(ctx, { date: "2026-10-06" });
+    expect(byDate.map((e) => [e.description, e.month])).toEqual([["Farmácia", "2026-11"]]);
+    expect(await listExpenses(ctx, { date: "2026-10-04" })).toEqual([]);
   });
 });
 

@@ -5,6 +5,7 @@ import { createEvent } from "../../src/worker/modules/agenda/service";
 import { createTask, updateTask } from "../../src/worker/modules/tasks/service";
 import { getFinance, getToday, getWeek } from "../../src/worker/modules/today/service";
 import { createSession, updateSession } from "../../src/worker/modules/training/service";
+import { createExpense } from "../../src/worker/services/expenses";
 import { getSummary } from "../../src/worker/services/summary";
 import { resetFinance, testCtx } from "../fixtures/finance";
 import { resetLifeOS } from "../fixtures/lifeos";
@@ -31,6 +32,25 @@ describe("finanças em Hoje", () => {
     // Transporte estourou (178,90 de 150); Almoço está em 10%: só o primeiro pede atenção
     expect(finance.budgets_attention).toEqual([{ id: 6, description: "Transporte", spent_cents: 17890, limit_cents: 15000, remaining_cents: -2890 }]);
     expect((await getToday(ctx)).finance).toEqual(finance);
+  });
+});
+
+describe("gastos de hoje", () => {
+  it("lista os gastos com data de hoje, soma a sua parte e separa a dos outros", async () => {
+    await createExpense(ctx, { description: "Café", amount_cents: 850, date: "2026-10-15", account_id: 3 });
+    await createExpense(ctx, { description: "Almoço", amount_cents: 3200, date: "2026-10-15", account_id: 4, budget_id: 5 });
+    // No Cartão B (fecha dia 5): fatura de novembro, mas é gasto de hoje; metade é de outra pessoa
+    await createExpense(ctx, { description: "Jantar", amount_cents: 12000, date: "2026-10-15", account_id: 2, splits: [{ person: "Ana", amount_cents: 6000 }] });
+    await createExpense(ctx, { description: "Ontem", amount_cents: 999, date: "2026-10-14", account_id: 3 });
+
+    const { spending } = await getToday(ctx);
+    expect(spending.items.map((e) => e.description).sort()).toEqual(["Almoço", "Café", "Jantar"]);
+    expect(spending.total_cents).toBe(850 + 3200 + 6000);
+    expect(spending.shared_cents).toBe(6000);
+  });
+
+  it("dia sem gastos", async () => {
+    expect((await getToday(ctx)).spending).toEqual({ items: [], total_cents: 0, shared_cents: 0 });
   });
 });
 

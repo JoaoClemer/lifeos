@@ -2,6 +2,7 @@
 import type { AgendaItem } from "./agenda";
 import type { Task } from "./tasks";
 import type { TrainingSession, WeekStats } from "./training";
+import type { Expense } from "./types";
 
 export type EventItem = Extract<AgendaItem, { kind: "event" }>;
 
@@ -22,6 +23,16 @@ export interface Today {
   training: TrainingSession[];
   /** Resumo financeiro do mês, tirado do resumo do módulo de finanças (sem recalcular nada). */
   finance: TodayFinance;
+  /** Gastos avulsos com data de hoje (inclui os de orçamento). */
+  spending: TodaySpending;
+}
+
+export interface TodaySpending {
+  items: Expense[];
+  /** Soma da sua parte. */
+  total_cents: number;
+  /** Parte de outras pessoas nos gastos divididos (vira "a receber"). */
+  shared_cents: number;
 }
 
 export interface TodayFinance {
