@@ -3,7 +3,8 @@ import { z } from "zod";
 import { addDays } from "../../../shared/datetime";
 import { type Task, TASK_PRIORITY_LABEL, TASK_STATUS_LABEL, type TaskPriority, type TaskStatus } from "../../../shared/tasks";
 import type { Ctx } from "../../lib";
-import { confirmArg, dateArg, dayLabel, needsConfirmation, toDate } from "../../mcp/args";
+import { describeRRule, parseRRule } from "../../../shared/recurrence";
+import { confirmArg, dateArg, dayLabel, needsConfirmation, repeatArg, toDate, toRRule } from "../../mcp/args";
 import { type Tool, tool } from "../../mcp/tool";
 import * as tasks from "./service";
 
@@ -35,6 +36,7 @@ export function taskLine(t: Task, today: string): string {
   if (t.due_date) parts.push(`prazo ${dayLabel(t.due_date, today)}${t.status !== "done" && t.due_date < today ? " ⚠️ atrasada" : ""}`);
   if (t.priority !== "medium") parts.push(`prioridade ${TASK_PRIORITY_LABEL[t.priority].toLowerCase()}`);
   if (t.status === "doing") parts.push("em andamento");
+  if (t.rrule && t.status !== "done") parts.push(`repete ${describeRRule(parseRRule(t.rrule), t.due_date ?? undefined)}`);
   if (t.status === "done") parts.push(`concluída${t.completed_at ? ` em ${t.completed_at.replace("T", " ")}` : ""}`);
   if (t.subtasks_total) parts.push(`subtarefas ${t.subtasks_done}/${t.subtasks_total}`);
   if (t.tags.length) parts.push(t.tags.map((x) => `#${x}`).join(" "));
@@ -79,6 +81,7 @@ export const TASK_TOOLS: Tool[] = [
     title: "Criar tarefa",
     description:
       "Cria uma tarefa. Prazo é opcional e não ocupa horário na agenda (para reservar um horário, use criar_evento com o parâmetro tarefa). " +
+      "Com repetir, a tarefa se repete (todo dia, toda semana etc.): ao concluir, a próxima é criada com o novo prazo (sem prazo, começa hoje). " +
       "Se uma tarefa com o mesmo título foi criada há poucos minutos, devolve a existente em vez de duplicar.",
     schema: z.object({
       titulo: z.string().min(1),
@@ -89,6 +92,7 @@ export const TASK_TOOLS: Tool[] = [
       estimativa_min: z.number().int().positive().optional().describe("Tempo estimado em minutos"),
       notas: z.string().optional(),
       subtarefas: z.array(z.string().min(1)).optional(),
+      repetir: repeatArg.optional().describe("Repetição da tarefa (sem 'vezes': termina numa data com 'ate')"),
     }),
     async run(a, ctx) {
       const existing = await tasks.findRecentTask(ctx, a.titulo);
@@ -101,6 +105,7 @@ export const TASK_TOOLS: Tool[] = [
         tags: a.etiquetas,
         estimate_minutes: a.estimativa_min ?? null,
         notes: a.notas ?? null,
+        rrule: a.repetir ? toRRule(ctx, a.repetir) : null,
       });
       for (const s of a.subtarefas ?? []) await tasks.createTask(ctx, { title: s, parent_id: t.id });
       return `✅ Tarefa criada:\n${taskLine(await tasks.getTask(ctx, t.id), ctx.today)}`;
@@ -110,7 +115,9 @@ export const TASK_TOOLS: Tool[] = [
   tool({
     name: "concluir_tarefa",
     title: "Concluir ou reabrir tarefa",
-    description: "Marca a tarefa como concluída (com as subtarefas abertas) ou, com reabrir: true, volta para pendente. Concluir de novo não muda nada.",
+    description:
+      "Marca a tarefa como concluída (com as subtarefas abertas) ou, com reabrir: true, volta para pendente. Concluir de novo não muda nada. " +
+      "Em tarefa que se repete, concluir cria a próxima com o novo prazo; reabrir remove a próxima que ainda não foi feita.",
     schema: z.object({ tarefa: taskArg, reabrir: z.boolean().optional() }),
     annotations: { idempotentHint: true },
     async run(a, ctx) {
@@ -118,14 +125,18 @@ export const TASK_TOOLS: Tool[] = [
       if (!a.reabrir && t.status === "done") return `A tarefa já estava concluída:\n${taskLine(t, ctx.today)}`;
       if (a.reabrir && t.status !== "done") return `A tarefa não estava concluída:\n${taskLine(t, ctx.today)}`;
       const u = await tasks.updateTask(ctx, t.id, { status: a.reabrir ? "todo" : "done" });
-      return `${a.reabrir ? "↩️ Tarefa reaberta" : "✅ Tarefa concluída"}:\n${taskLine(u, ctx.today)}`;
+      const next = !a.reabrir && u.rrule ? await tasks.getSuccessor(ctx, u.id) : null;
+      return `${a.reabrir ? "↩️ Tarefa reaberta" : "✅ Tarefa concluída"}:\n${taskLine(u, ctx.today)}${
+        next ? `\nPróxima: ${taskLine(next, ctx.today).slice(2)}` : u.rrule && !a.reabrir ? "\nA repetição terminou: não há próxima." : ""
+      }`;
     },
   }),
 
   tool({
     name: "editar_tarefa",
     title: "Editar tarefa",
-    description: 'Altera título, prazo (use "" para tirar o prazo), prioridade, situação, projeto, etiquetas, estimativa ou notas de uma tarefa.',
+    description:
+      'Altera título, prazo (use "" para tirar o prazo), prioridade, situação, projeto, etiquetas, estimativa, notas ou a repetição de uma tarefa (repetir ou parar_de_repetir).',
     schema: z.object({
       tarefa: taskArg,
       titulo: z.string().min(1).optional(),
@@ -136,10 +147,13 @@ export const TASK_TOOLS: Tool[] = [
       etiquetas: z.array(z.string()).optional(),
       estimativa_min: z.number().int().positive().optional(),
       notas: z.string().optional(),
+      repetir: repeatArg.optional(),
+      parar_de_repetir: z.boolean().optional(),
     }),
     async run(a, ctx) {
       const t = await findTask(ctx, a.tarefa);
       const u = await tasks.updateTask(ctx, t.id, {
+        rrule: a.parar_de_repetir ? null : a.repetir ? toRRule(ctx, a.repetir) : undefined,
         title: a.titulo,
         due_date: a.prazo === undefined ? undefined : a.prazo === "" ? null : toDate(ctx, a.prazo),
         priority: a.prioridade ? PRIORITY[a.prioridade] : undefined,

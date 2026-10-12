@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { addDays } from "../../src/shared/datetime";
-import { countBefore, formatRRule, isOccurrence, occurrences, parseRRule, type RRule } from "../../src/shared/recurrence";
+import { countBefore, describeRRule, formatRRule, isOccurrence, nextDateAfter, occurrences, parseRRule, type RRule } from "../../src/shared/recurrence";
 
 const all = (start: string, rule: string, from: string, to: string) => occurrences(start, parseRRule(rule), from, to);
 
@@ -22,6 +22,23 @@ describe("parseRRule / formatRRule", () => {
     ["FREQ=MONTHLY;BYMONTHDAY=1", "BYMONTHDAY"],
   ])("recusa %j", (text, message) => {
     expect(() => parseRRule(text)).toThrow(message);
+  });
+});
+
+describe("describeRRule e nextDateAfter", () => {
+  it("descreve em português", () => {
+    expect(describeRRule(parseRRule("FREQ=DAILY"))).toBe("todo dia");
+    expect(describeRRule(parseRRule("FREQ=DAILY;INTERVAL=3"))).toBe("a cada 3 dias");
+    expect(describeRRule(parseRRule("FREQ=WEEKLY;BYDAY=WE,MO"))).toBe("toda semana (seg, qua)");
+    expect(describeRRule(parseRRule("FREQ=WEEKLY;INTERVAL=2;UNTIL=20261231"))).toBe("a cada 2 semanas até 31/12/2026");
+    expect(describeRRule(parseRRule("FREQ=MONTHLY"), "2026-10-05")).toBe("todo mês no dia 5");
+    expect(describeRRule(parseRRule("FREQ=YEARLY;COUNT=3"), "2026-03-15")).toBe("todo ano em 15/03, 3 vezes");
+  });
+
+  it("próxima data depois de um dia", () => {
+    expect(nextDateAfter("2026-10-12", parseRRule("FREQ=WEEKLY;BYDAY=MO,TH"), "2026-10-12")).toBe("2026-10-15");
+    expect(nextDateAfter("2026-01-31", parseRRule("FREQ=MONTHLY"), "2026-01-31")).toBe("2026-03-31");
+    expect(nextDateAfter("2026-10-15", parseRRule("FREQ=DAILY;UNTIL=20261015"), "2026-10-15")).toBeNull();
   });
 });
 

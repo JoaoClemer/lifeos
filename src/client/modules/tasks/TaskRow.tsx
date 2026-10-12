@@ -1,4 +1,5 @@
-import { CalendarClock, ListChecks } from "lucide-react";
+import { CalendarClock, ListChecks, Repeat } from "lucide-react";
+import { describeRRule, parseRRule } from "../../../shared/recurrence";
 import type { Project, Task } from "../../../shared/tasks";
 import { api } from "../../api";
 import { minutesLabel, relativeDay } from "../../dates";
@@ -8,8 +9,11 @@ import { Badge, CheckCircle, cx, Row } from "../../ui";
 /** Conclui ou reabre a tarefa direto da lista. */
 export function useToggleTask() {
   const { run } = useMutation();
-  return (task: Pick<Task, "id" | "status">) =>
-    run(() => api.patch(`/api/tasks/${task.id}`, { status: task.status === "done" ? "todo" : "done" }), task.status === "done" ? "Tarefa reaberta" : "Tarefa concluída");
+  return (task: Pick<Task, "id" | "status"> & { rrule?: string | null }) =>
+    run(
+      () => api.patch(`/api/tasks/${task.id}`, { status: task.status === "done" ? "todo" : "done" }),
+      task.status === "done" ? "Tarefa reaberta" : task.rrule ? "Tarefa concluída. A próxima já está na lista" : "Tarefa concluída",
+    );
 }
 
 export function TaskRow({ task, projects, hideDue }: { task: Task; projects?: Map<number, Project>; hideDue?: boolean }) {
@@ -33,6 +37,11 @@ export function TaskRow({ task, projects, hideDue }: { task: Task; projects?: Ma
           {task.priority === "high" && !done && <Badge tone="danger">Alta</Badge>}
           {task.priority === "low" && !done && <Badge>Baixa</Badge>}
           {task.status === "doing" && <Badge tone="accent">Em andamento</Badge>}
+          {task.rrule && task.status !== "done" && (
+            <span className="inline-flex items-center gap-1">
+              <Repeat size={13} /> {describeRRule(parseRRule(task.rrule), task.due_date ?? undefined)}
+            </span>
+          )}
           {project && <span>{project.name}</span>}
           {task.subtasks_total > 0 && (
             <span className="inline-flex items-center gap-1">

@@ -2,6 +2,7 @@
 import { z } from "zod";
 import type { EditScope } from "../../shared/agenda";
 import { addDays, isValidDate } from "../../shared/datetime";
+import { formatRRule, type Freq, type Weekday } from "../../shared/recurrence";
 import { type Ctx, normalize, UserError } from "../lib";
 
 const pad = (n: string | number) => String(n).padStart(2, "0");
@@ -30,6 +31,30 @@ export function toTime(v: string): string {
   const m = /^(\d{1,2})(?:[:h](\d{2})?)?h?$/i.exec(v.trim().replace(/\s/g, ""));
   if (m && Number(m[1]) < 24 && Number(m[2] ?? 0) < 60) return `${pad(m[1])}:${pad(m[2] ?? 0)}`;
   throw new UserError(`Horário inválido: "${v}" (use 14:00, 9h ou 14h30)`);
+}
+
+const FREQ: Record<string, Freq> = { diaria: "DAILY", semanal: "WEEKLY", mensal: "MONTHLY", anual: "YEARLY" };
+const WEEKDAY_CODE: Record<string, Weekday> = { seg: "MO", ter: "TU", qua: "WE", qui: "TH", sex: "FR", sab: "SA", dom: "SU" };
+
+/** Repetição (eventos e tarefas). `vezes` só faz sentido em eventos. */
+export const repeatArg = z
+  .object({
+    frequencia: z.enum(["diaria", "semanal", "mensal", "anual"]),
+    intervalo: z.number().int().min(1).max(99).optional().describe("A cada quantos dias/semanas/meses/anos. Padrão 1"),
+    dias_semana: z.array(z.enum(["seg", "ter", "qua", "qui", "sex", "sab", "dom"])).optional().describe("Só para semanal"),
+    ate: dateArg.optional().describe("Última data (inclusive)"),
+    vezes: z.number().int().min(1).max(1000).optional().describe("Número total de ocorrências (só eventos)"),
+  })
+  .describe("Repetição");
+
+export function toRRule(ctx: Ctx, r: z.output<typeof repeatArg>): string {
+  return formatRRule({
+    freq: FREQ[r.frequencia],
+    interval: r.intervalo ?? 1,
+    byday: r.frequencia === "semanal" && r.dias_semana?.length ? r.dias_semana.map((d) => WEEKDAY_CODE[d]) : undefined,
+    until: r.ate ? toDate(ctx, r.ate) : undefined,
+    count: r.vezes,
+  });
 }
 
 export const scopeArg = z

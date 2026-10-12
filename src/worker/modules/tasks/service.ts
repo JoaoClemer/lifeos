@@ -1,7 +1,10 @@
 // Tarefas e projetos. Regras: uma tarefa pode não ter prazo; prazo não ocupa horário na agenda;
 // concluir registra a data e hora (e conclui as subtarefas abertas); reabrir limpa a conclusão, mas o histórico fica em activity_log.
+// Tarefa que se repete: ao concluir, a próxima é criada com o novo prazo (e as subtarefas abertas de novo);
+// cada conclusão fica como uma tarefa concluída. Reabrir remove a próxima, se ela ainda não foi feita.
 import { z } from "zod";
 import { isValidDate } from "../../../shared/datetime";
+import { formatRRule, nextDateAfter, parseRRule } from "../../../shared/recurrence";
 import { compareTasks, type Project, type Task, type TaskPriority } from "../../../shared/tasks";
 import { activity } from "../../activity";
 import { type Ctx, findByName, nn, updateRow, UserError } from "../../lib";
@@ -18,8 +21,22 @@ export const TaskInput = z.object({
   tags: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
   project_id: z.number().int().nullable().optional(),
   parent_id: z.number().int().nullable().optional(),
+  /** Repetição (RRULE, ex.: FREQ=WEEKLY;BYDAY=MO). null = não repete. */
+  rrule: z.string().nullable().optional(),
 });
 export const TaskPatch = TaskInput.partial();
+
+/** Valida a repetição de uma tarefa e devolve a forma canônica. Tarefas não aceitam COUNT (a série é de tarefas separadas). */
+function taskRule(text: string): string {
+  let r;
+  try {
+    r = parseRRule(text);
+  } catch (e) {
+    throw new UserError(e instanceof Error ? e.message : String(e));
+  }
+  if (r.count) throw new UserError("Em tarefas, a repetição termina numa data (UNTIL), não num número de vezes");
+  return formatRRule(r);
+}
 
 export const ProjectInput = z.object({
   name: z.string().trim().min(1).max(120),
@@ -33,7 +50,7 @@ export const ProjectPatch = ProjectInput.partial();
 type TaskRow = Omit<Task, "tags"> & { tags: string | null };
 
 const SELECT = `SELECT t.id, t.title, t.notes, t.status, t.priority, t.due_date, t.estimate_minutes, t.tags, t.project_id, t.parent_id,
-  t.completed_at, t.created_at, t.updated_at,
+  t.completed_at, t.rrule, t.recurrence_of, t.created_at, t.updated_at,
   (SELECT COUNT(*) FROM tasks s WHERE s.parent_id = t.id) AS subtasks_total,
   (SELECT COUNT(*) FROM tasks s WHERE s.parent_id = t.id AND s.status = 'done') AS subtasks_done
   FROM tasks t`;
@@ -118,25 +135,35 @@ export async function createTask(ctx: Ctx, input: z.input<typeof TaskInput>): Pr
   const t = TaskInput.parse(input);
   await checkRelations(ctx, null, t.project_id, t.parent_id);
   const status = t.status ?? "todo";
+  const rrule = t.rrule ? taskRule(t.rrule) : null;
+  if (rrule && t.parent_id) throw new UserError("Subtarefas não se repetem: defina a repetição na tarefa principal");
   const row = await ctx.db
     .prepare(
-      `INSERT INTO tasks (title, notes, status, priority, due_date, estimate_minutes, tags, project_id, parent_id, completed_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+      `INSERT INTO tasks (title, notes, status, priority, due_date, estimate_minutes, tags, project_id, parent_id, completed_at, rrule)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
     )
     .bind(
       t.title,
       nn(t.notes),
       status,
       t.priority ?? "medium",
-      nn(t.due_date),
+      // Tarefa que se repete precisa de prazo: sem um, começa hoje
+      t.due_date ?? (rrule ? ctx.today : null),
       nn(t.estimate_minutes),
       cleanTags(t.tags),
       nn(t.project_id),
       nn(t.parent_id),
       status === "done" ? ctx.now : null,
+      rrule,
     )
     .first<{ id: number }>();
   return getTask(ctx, row!.id);
+}
+
+/** A próxima tarefa gerada pela conclusão desta (na repetição), se houver. */
+export async function getSuccessor(ctx: Ctx, id: number): Promise<Task | null> {
+  const row = await ctx.db.prepare(`${SELECT} WHERE t.recurrence_of = ? ORDER BY t.id DESC LIMIT 1`).bind(id).first<TaskRow>();
+  return row ? decorate(row) : null;
 }
 
 /**
@@ -155,18 +182,51 @@ export async function updateTask(ctx: Ctx, id: number, patch: z.input<typeof Tas
   }
   if (p.tags !== undefined) sets.tags = cleanTags(p.tags);
 
+  // Repetição: precisa de prazo (sem um, começa hoje) e não vale para subtarefas
+  const rule = p.rrule === undefined ? cur.rrule : p.rrule ? taskRule(p.rrule) : null;
+  if (p.rrule !== undefined) sets.rrule = rule;
+  if (rule && (p.parent_id ?? cur.parent_id)) throw new UserError("Subtarefas não se repetem: defina a repetição na tarefa principal");
+  if (rule && p.due_date === null) throw new UserError("Tarefa que se repete precisa de prazo. Para tirar o prazo, pare a repetição antes");
+  if (rule && !cur.due_date && p.due_date === undefined) sets.due_date = ctx.today;
+  const due = (sets.due_date as string | null | undefined) ?? cur.due_date;
+
   const extra: D1PreparedStatement[] = [];
   if (p.status && p.status !== cur.status) {
     sets.status = p.status;
     if (p.status === "done") {
       sets.completed_at = ctx.now;
+      // Próxima da série: primeira data da regra depois do prazo atual ou de hoje (o que vier depois),
+      // para não nascer atrasada nem pular uma vez quando concluída adiantada
+      const next = rule && due && !cur.parent_id && !(await getSuccessor(ctx, id)) ? nextDateAfter(due, parseRRule(rule), due > ctx.today ? due : ctx.today) : null;
       extra.push(
         ctx.db.prepare("UPDATE tasks SET status = 'done', completed_at = ?, updated_at = datetime('now') WHERE parent_id = ? AND status <> 'done'").bind(ctx.now, id),
-        activity(ctx, "task.completed", "task", id, { open_subtasks: cur.subtasks_total - cur.subtasks_done }),
+        activity(ctx, "task.completed", "task", id, { open_subtasks: cur.subtasks_total - cur.subtasks_done, ...(next ? { next_due: next } : {}) }),
       );
+      if (next) {
+        // Copia a tarefa (já com as alterações deste patch) e as subtarefas, abertas
+        extra.push(
+          ctx.db
+            .prepare(
+              `INSERT INTO tasks (title, notes, priority, due_date, estimate_minutes, tags, project_id, rrule, recurrence_of)
+               SELECT title, notes, priority, ?, estimate_minutes, tags, project_id, rrule, id FROM tasks WHERE id = ?`,
+            )
+            .bind(next, id),
+          ctx.db
+            .prepare(
+              `INSERT INTO tasks (title, notes, priority, estimate_minutes, tags, parent_id)
+               SELECT s.title, s.notes, s.priority, s.estimate_minutes, s.tags, (SELECT n.id FROM tasks n WHERE n.recurrence_of = ?1 ORDER BY n.id DESC LIMIT 1)
+               FROM tasks s WHERE s.parent_id = ?1 ORDER BY s.id`,
+            )
+            .bind(id),
+        );
+      }
     } else if (cur.status === "done") {
       sets.completed_at = null;
-      extra.push(activity(ctx, "task.reopened", "task", id, { completed_at: cur.completed_at }));
+      // A próxima da série sai se ainda não foi feita (senão haveria duas abertas)
+      extra.push(
+        ctx.db.prepare("DELETE FROM tasks WHERE recurrence_of = ? AND status <> 'done'").bind(id),
+        activity(ctx, "task.reopened", "task", id, { completed_at: cur.completed_at }),
+      );
     }
   }
   const keys = Object.keys(sets);

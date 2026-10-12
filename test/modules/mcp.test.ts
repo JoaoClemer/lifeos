@@ -84,6 +84,21 @@ describe("tarefas", () => {
     expect(audits.results.map((r) => JSON.parse(r.detail).tool)).toEqual(["criar_tarefa", "criar_tarefa", "concluir_tarefa", "concluir_tarefa", "concluir_tarefa"]);
   });
 
+  it("tarefa que se repete: criar, concluir mostra a próxima, parar de repetir", async () => {
+    const created = await call("criar_tarefa", { titulo: "Pagar a diarista", repetir: { frequencia: "semanal", dias_semana: ["sex"] } });
+    expect(created.text).toContain("repete toda semana (sex)");
+    const id = idOf(created.text, "tarefa");
+    const done = await call("concluir_tarefa", { tarefa: String(id) });
+    expect(done.text).toContain("✅ Tarefa concluída");
+    expect(done.text).toMatch(/Próxima: \[tarefa \d+\] Pagar a diarista · prazo/);
+    expect(await count("tasks")).toBe(2);
+    const nextId = Number(/Próxima: \[tarefa (\d+)/.exec(done.text)![1]);
+    expect((await call("editar_tarefa", { tarefa: String(nextId), parar_de_repetir: true })).text).not.toContain("repete");
+    expect((await call("concluir_tarefa", { tarefa: String(nextId) })).text).not.toContain("Próxima");
+    expect(await count("tasks")).toBe(2);
+    expect((await call("criar_tarefa", { titulo: "X", repetir: { frequencia: "diaria", vezes: 3 } })).text).toContain("número de vezes");
+  });
+
   it("remover exige confirmação: sem confirmar só mostra a prévia", async () => {
     const id = idOf((await call("criar_tarefa", { titulo: "Rascunho" })).text, "tarefa");
     const preview = await call("remover_tarefa", { tarefa: String(id) });

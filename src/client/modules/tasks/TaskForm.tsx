@@ -6,6 +6,7 @@ import type { Project, Task, TaskPriority, TaskStatus } from "../../../shared/ta
 import { api } from "../../api";
 import { relativeDay, timeLabel } from "../../dates";
 import { confirmDelete, FormFooter } from "../../forms/common";
+import { initialRepeat, RepeatPicker, repeatRRule, repeatValid, weekdayOf } from "../../RepeatPicker";
 import { useApp, useData, useMutation } from "../../state";
 import { Button, CheckCircle, Chips, cx, Field, TextArea, TextInput } from "../../ui";
 
@@ -28,6 +29,7 @@ export function TaskForm({ item, defaults, onDone }: { item?: Task; defaults?: P
   const [projectId, setProjectId] = useState<number | null>(item ? item.project_id : (defaults?.project_id ?? null));
   const [estimate, setEstimate] = useState<number | null>(item?.estimate_minutes ?? null);
   const [tags, setTags] = useState((item?.tags ?? []).join(", "));
+  const [repeat, setRepeat] = useState(() => initialRepeat(item?.rrule ?? null, item?.due_date ?? defaults?.due_date ?? today));
   const [pendingSubtasks, setPendingSubtasks] = useState<string[]>([]);
   const [subtaskDraft, setSubtaskDraft] = useState("");
 
@@ -36,12 +38,22 @@ export function TaskForm({ item, defaults, onDone }: { item?: Task; defaults?: P
     .map((t) => t.trim())
     .filter(Boolean);
   const nextMonday = addDays(startOfWeek(today), 7);
-  const body = { title, notes: notes.trim() || null, due_date: due, priority, project_id: projectId, estimate_minutes: estimate, tags: tagList };
+  const rrule = repeatRRule(repeat);
+  /** Mudar o prazo leva junto o dia da semana da repetição, se só o dia do prazo antigo estava marcado. */
+  function changeDue(d: string | null) {
+    const old = due ?? today;
+    if (d && repeat.freq === "WEEKLY" && repeat.byday.length === 1 && repeat.byday[0] === weekdayOf(old)) setRepeat({ ...repeat, byday: [weekdayOf(d)] });
+    setDue(d);
+  }
+  // Tarefa que se repete precisa de prazo: sem um, começa hoje
+  const body = { title, notes: notes.trim() || null, due_date: rrule ? (due ?? today) : due, priority, project_id: projectId, estimate_minutes: estimate, tags: tagList, rrule };
+  const valid = !!title.trim() && repeatValid(repeat);
 
   async function save() {
-    if (!title.trim()) return;
+    if (!valid) return;
     if (item) {
-      if (await run(() => api.patch(`/api/tasks/${item.id}`, { ...body, status }), "Tarefa salva")) onDone();
+      const msg = status === "done" && item.status !== "done" && rrule ? "Tarefa concluída. A próxima já está na lista" : "Tarefa salva";
+      if (await run(() => api.patch(`/api/tasks/${item.id}`, { ...body, status }), msg)) onDone();
       return;
     }
     const ok = await run(async () => {
@@ -90,11 +102,24 @@ export function TaskForm({ item, defaults, onDone }: { item?: Task; defaults?: P
               ...(nextMonday !== addDays(today, 1) ? [{ value: nextMonday, label: "Próx. segunda" }] : []),
             ]}
             value={due}
-            onChange={setDue}
+            onChange={changeDue}
           />
-          <TextInput type="date" aria-label="Data do prazo" value={due ?? ""} onChange={(e) => setDue(e.target.value || null)} />
+          <TextInput type="date" aria-label="Data do prazo" value={due ?? ""} onChange={(e) => changeDue(e.target.value || null)} />
         </div>
       </Field>
+
+      {!isSubtask && (
+        <Field label="Repetir" hint={rrule ? "Ao concluir, a próxima é criada com o novo prazo." : undefined}>
+          <RepeatPicker
+            value={repeat}
+            onChange={(r) => {
+              setRepeat(r);
+              if (r.freq !== "none" && !due) setDue(today);
+            }}
+            minDate={due ?? today}
+          />
+        </Field>
+      )}
 
       <Field label="Prioridade">
         <Chips<TaskPriority>
@@ -195,7 +220,7 @@ export function TaskForm({ item, defaults, onDone }: { item?: Task; defaults?: P
         </Field>
       )}
 
-      <FormFooter onSave={save} busy={busy} disabled={!title.trim()} onDelete={item ? remove : undefined} saveLabel={item ? "Salvar" : "Criar tarefa"} />
+      <FormFooter onSave={save} busy={busy} disabled={!valid} onDelete={item ? remove : undefined} saveLabel={item ? "Salvar" : "Criar tarefa"} />
     </div>
   );
 }
