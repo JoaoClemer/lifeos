@@ -2,37 +2,13 @@
 import { z } from "zod";
 import { type AgendaItem, lastDay, type Occurrence } from "../../../shared/agenda";
 import { addDays, addMinutes, diffDays, isValidLocal, startOfWeek } from "../../../shared/datetime";
-import { formatRRule, type Freq, type Weekday } from "../../../shared/recurrence";
 import { formatPlanDuration, STATUS_LABEL } from "../../../shared/training";
 import { type Ctx, UserError } from "../../lib";
-import { confirmArg, dateArg, dayLabel, needsConfirmation, SCOPES, scopeArg, timeArg, toDate, toTime } from "../../mcp/args";
+import { confirmArg, dateArg, dayLabel, needsConfirmation, repeatArg, SCOPES, scopeArg, timeArg, toDate, toRRule, toTime } from "../../mcp/args";
 import { type Tool, tool } from "../../mcp/tool";
 import { getTask, resolveTask } from "../tasks/service";
 import { getAgenda } from "../today/service";
 import * as agenda from "./service";
-
-const FREQ: Record<string, Freq> = { diaria: "DAILY", semanal: "WEEKLY", mensal: "MONTHLY", anual: "YEARLY" };
-const WEEKDAY: Record<string, Weekday> = { seg: "MO", ter: "TU", qua: "WE", qui: "TH", sex: "FR", sab: "SA", dom: "SU" };
-
-const repeatArg = z
-  .object({
-    frequencia: z.enum(["diaria", "semanal", "mensal", "anual"]),
-    intervalo: z.number().int().min(1).max(99).optional().describe("A cada quantos dias/semanas/meses/anos. Padrão 1"),
-    dias_semana: z.array(z.enum(["seg", "ter", "qua", "qui", "sex", "sab", "dom"])).optional().describe("Só para semanal"),
-    ate: dateArg.optional().describe("Última data (inclusive)"),
-    vezes: z.number().int().min(1).max(1000).optional().describe("Número total de ocorrências"),
-  })
-  .describe("Repetição do evento");
-
-function rrule(ctx: Ctx, r: z.output<typeof repeatArg>): string {
-  return formatRRule({
-    freq: FREQ[r.frequencia],
-    interval: r.intervalo ?? 1,
-    byday: r.frequencia === "semanal" && r.dias_semana?.length ? r.dias_semana.map((d) => WEEKDAY[d]) : undefined,
-    until: r.ate ? toDate(ctx, r.ate) : undefined,
-    count: r.vezes,
-  });
-}
 
 function timeRange(o: Pick<Occurrence, "all_day" | "start_at" | "end_at">): string {
   if (o.all_day) {
@@ -146,7 +122,7 @@ export const AGENDA_TOOLS: Tool[] = [
         location: a.local ?? null,
         url: a.link ?? null,
         category: a.categoria ?? null,
-        rrule: a.repetir ? rrule(ctx, a.repetir) : null,
+        rrule: a.repetir ? toRRule(ctx, a.repetir) : null,
         task_id: task?.id ?? null,
       });
       return `✅ Evento criado [evento ${e.id}]: ${e.title} — ${dayLabel(e.start_at.slice(0, 10), ctx.today)} ${timeRange(e)}${e.rrule ? ` (repete: ${e.rrule})` : ""}${task ? ` · horário para a tarefa "${task.title}"` : ""}`;
@@ -186,7 +162,7 @@ export const AGENDA_TOOLS: Tool[] = [
         location: a.local,
         url: a.link,
         category: a.categoria,
-        rrule: a.parar_de_repetir ? null : a.repetir ? rrule(ctx, a.repetir) : undefined,
+        rrule: a.parar_de_repetir ? null : a.repetir ? toRRule(ctx, a.repetir) : undefined,
       };
       if (a.data || a.hora_inicio || a.hora_fim || a.duracao_min || a.dia_inteiro !== undefined) {
         const allDay = a.dia_inteiro ?? (ev.all_day && !a.hora_inicio);

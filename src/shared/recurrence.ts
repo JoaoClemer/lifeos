@@ -139,3 +139,37 @@ export function isOccurrence(start: string, rule: RRule, occ: string): boolean {
 export function countBefore(start: string, rule: RRule, occ: string): number {
   return occurrences(start, rule, start, occ, 100_000).length;
 }
+
+/**
+ * Próxima data da série depois de `after` ('YYYY-MM-DD'), usando `start` (uma data da série) como referência.
+ * Null se a série já terminou (UNTIL). Usado nas tarefas que se repetem.
+ */
+export function nextDateAfter(start: string, rule: RRule, after: string): string | null {
+  const from = `${addDays(after, 1)}T00:00`;
+  // 3000 dias cobrem até "a cada 2 anos" em 29/02
+  const next = occurrences(`${start}T00:00`, rule, from, `${addDays(after, 3000)}T00:00`, 1)[0];
+  return next ? next.slice(0, 10) : null;
+}
+
+const DAY_NAME: Record<Weekday, string> = { MO: "seg", TU: "ter", WE: "qua", TH: "qui", FR: "sex", SA: "sáb", SU: "dom" };
+const UNITS: Record<Freq, [string, string, string]> = {
+  DAILY: ["todo dia", "dias", "a cada"],
+  WEEKLY: ["toda semana", "semanas", "a cada"],
+  MONTHLY: ["todo mês", "meses", "a cada"],
+  YEARLY: ["todo ano", "anos", "a cada"],
+};
+
+/** "todo dia", "a cada 2 semanas (seg, qua)", "todo mês no dia 10", "todo ano em 15/03", com " até 31/12/2026" ou ", 10 vezes". */
+export function describeRRule(r: RRule, startDate?: string): string {
+  const [every, plural, prefix] = UNITS[r.freq];
+  let s = r.interval === 1 ? every : `${prefix} ${r.interval} ${plural}`;
+  if (r.freq === "WEEKLY" && r.byday?.length) {
+    const order: Weekday[] = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
+    s += ` (${order.filter((d) => r.byday!.includes(d)).map((d) => DAY_NAME[d]).join(", ")})`;
+  }
+  if (r.freq === "MONTHLY" && startDate) s += ` no dia ${Number(startDate.slice(8, 10))}`;
+  if (r.freq === "YEARLY" && startDate) s += ` em ${startDate.slice(8, 10)}/${startDate.slice(5, 7)}`;
+  if (r.until) s += ` até ${r.until.slice(8, 10)}/${r.until.slice(5, 7)}/${r.until.slice(0, 4)}`;
+  if (r.count) s += `, ${r.count} vezes`;
+  return s;
+}

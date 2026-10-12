@@ -1,30 +1,13 @@
 import { useState } from "react";
 import { EVENT_COLORS, type EditScope, lastDay, type Occurrence } from "../../../shared/agenda";
 import { addMinutes, diffMinutes, nowIn } from "../../../shared/datetime";
-import { formatRRule, type Freq, parseRRule, type RRule, WEEKDAYS, type Weekday } from "../../../shared/recurrence";
 import type { Task } from "../../../shared/tasks";
 import { api } from "../../api";
-import { FormFooter, NumberInput } from "../../forms/common";
+import { FormFooter } from "../../forms/common";
+import { initialRepeat, RepeatPicker, repeatRRule, repeatValid } from "../../RepeatPicker";
 import { type EventDefaults, useApp, useData, useMutation } from "../../state";
-import { Button, Chips, cx, Field, Segmented, TextArea, TextInput, Toggle } from "../../ui";
+import { Button, cx, Field, Segmented, TextArea, TextInput, Toggle } from "../../ui";
 import { eventColor } from "./EventRow";
-
-type RepeatFreq = "none" | Freq;
-type EndMode = "never" | "until" | "count";
-
-// Segunda a domingo
-const WEEK: { day: Weekday; label: string; name: string }[] = [
-  { day: "MO", label: "S", name: "segunda" },
-  { day: "TU", label: "T", name: "terça" },
-  { day: "WE", label: "Q", name: "quarta" },
-  { day: "TH", label: "Q", name: "quinta" },
-  { day: "FR", label: "S", name: "sexta" },
-  { day: "SA", label: "S", name: "sábado" },
-  { day: "SU", label: "D", name: "domingo" },
-];
-const UNIT: Record<Freq, [string, string]> = { DAILY: ["dia", "dias"], WEEKLY: ["semana", "semanas"], MONTHLY: ["mês", "meses"], YEARLY: ["ano", "anos"] };
-
-const weekdayOf = (date: string): Weekday => WEEKDAYS[new Date(`${date}T12:00:00Z`).getUTCDay()];
 
 /** Próxima hora cheia (ex.: 14:20 → 15:00), limitada ao mesmo dia. */
 function nextHour(now: string): string {
@@ -37,7 +20,6 @@ export function EventForm({ item, defaults, onDone }: { item?: Occurrence; defau
   const { run, busy } = useMutation();
   const categories = useData<string[]>("/api/events/categories").data ?? [];
 
-  const initialRule: RRule | null = item?.rrule ? parseRRule(item.rrule) : null;
   const firstDate = item?.start_at.slice(0, 10) ?? defaults?.date ?? today;
   const startTime0 = item && !item.all_day ? item.start_at.slice(11) : firstDate === today ? nextHour(nowIn(timezone)) : "09:00";
   const end0 = item ? (item.all_day ? `${lastDay(item)}T${startTime0}` : item.end_at) : addMinutes(`${firstDate}T${startTime0}`, 60);
@@ -48,12 +30,7 @@ export function EventForm({ item, defaults, onDone }: { item?: Occurrence; defau
   const [startTime, setStartTime] = useState(startTime0);
   const [endDate, setEndDate] = useState(end0.slice(0, 10));
   const [endTime, setEndTime] = useState(item?.all_day ? addMinutes(`${firstDate}T${startTime0}`, 60).slice(11) : end0.slice(11));
-  const [freq, setFreq] = useState<RepeatFreq>(initialRule?.freq ?? "none");
-  const [every, setEvery] = useState(initialRule?.interval ?? 1);
-  const [byday, setByday] = useState<Weekday[]>(initialRule?.byday ?? [weekdayOf(firstDate)]);
-  const [endMode, setEndMode] = useState<EndMode>(initialRule?.until ? "until" : initialRule?.count ? "count" : "never");
-  const [until, setUntil] = useState(initialRule?.until ?? "");
-  const [count, setCount] = useState(initialRule?.count ?? 10);
+  const [repeat, setRepeat] = useState(() => initialRepeat(item?.rrule ?? null, firstDate));
   const [location, setLocation] = useState(item?.location ?? "");
   const [url, setUrl] = useState(item?.url ?? "");
   const [category, setCategory] = useState(item?.category ?? "");
@@ -76,16 +53,7 @@ export function EventForm({ item, defaults, onDone }: { item?: Occurrence; defau
     setEndTime(end.slice(11));
   }
 
-  const rrule =
-    freq === "none"
-      ? null
-      : formatRRule({
-          freq,
-          interval: every,
-          byday: freq === "WEEKLY" ? byday : undefined,
-          until: endMode === "until" && until ? until : undefined,
-          count: endMode === "count" ? count : undefined,
-        });
+  const rrule = repeatRRule(repeat);
   const timing = allDay ? { all_day: true, start: startDate, end: endDate } : { all_day: false, start: `${startDate}T${startTime}`, end: `${endDate}T${endTime}` };
   const fields = {
     title,
@@ -96,7 +64,7 @@ export function EventForm({ item, defaults, onDone }: { item?: Occurrence; defau
     description: description.trim() || null,
     task_id: taskId,
   };
-  const valid = title.trim() && startDate && endDate && (freq !== "WEEKLY" || byday.length > 0) && (endMode !== "until" || until);
+  const valid = title.trim() && startDate && endDate && repeatValid(repeat);
 
   async function save() {
     if (!valid) return;
@@ -180,67 +148,7 @@ export function EventForm({ item, defaults, onDone }: { item?: Occurrence; defau
         {repeatLocked ? (
           <p className="text-sm text-muted">Para mudar a repetição, escolha “Este e os próximos” ou “Todos”.</p>
         ) : (
-          <div className="space-y-3">
-            <Chips<RepeatFreq>
-              options={[
-                { value: "none", label: "Não repete" },
-                { value: "DAILY", label: "Diariamente" },
-                { value: "WEEKLY", label: "Semanalmente" },
-                { value: "MONTHLY", label: "Mensalmente" },
-                { value: "YEARLY", label: "Anualmente" },
-              ]}
-              value={freq}
-              onChange={setFreq}
-            />
-            {freq !== "none" && (
-              <>
-                <div className="flex items-center gap-3">
-                  <span className="text-sm text-muted">A cada</span>
-                  <div className="w-36">
-                    <NumberInput value={every} onChange={setEvery} min={1} max={99} />
-                  </div>
-                  <span className="text-sm text-muted">{UNIT[freq][every > 1 ? 1 : 0]}</span>
-                </div>
-                {freq === "WEEKLY" && (
-                  <div className="flex gap-1.5" role="group" aria-label="Dias da semana">
-                    {WEEK.map((w) => {
-                      const on = byday.includes(w.day);
-                      return (
-                        <button
-                          key={w.day}
-                          type="button"
-                          aria-pressed={on}
-                          aria-label={w.name}
-                          onClick={() => setByday(on ? byday.filter((d) => d !== w.day) : [...byday, w.day])}
-                          className={cx(
-                            "h-9 w-9 rounded-full border text-sm font-semibold transition",
-                            on ? "border-accent bg-accent text-accent-fg" : "border-border text-muted hover:bg-surface-2",
-                          )}
-                        >
-                          {w.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-                <Chips<EndMode>
-                  options={[
-                    { value: "never", label: "Sem fim" },
-                    { value: "until", label: "Até uma data" },
-                    { value: "count", label: "Número de vezes" },
-                  ]}
-                  value={endMode}
-                  onChange={setEndMode}
-                />
-                {endMode === "until" && <TextInput type="date" aria-label="Repetir até" value={until} min={startDate} onChange={(e) => setUntil(e.target.value)} />}
-                {endMode === "count" && (
-                  <div className="w-36">
-                    <NumberInput value={count} onChange={setCount} min={1} max={1000} />
-                  </div>
-                )}
-              </>
-            )}
-          </div>
+          <RepeatPicker value={repeat} onChange={setRepeat} minDate={startDate} allowCount />
         )}
       </Field>
 

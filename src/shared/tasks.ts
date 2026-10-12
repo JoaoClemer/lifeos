@@ -22,6 +22,10 @@ export interface Task {
   parent_id: number | null;
   /** Data e hora local da conclusão. */
   completed_at: string | null;
+  /** Repetição (RRULE): ao concluir, a próxima tarefa é criada com o novo prazo. */
+  rrule: string | null;
+  /** Tarefa concluída que gerou esta (na repetição). */
+  recurrence_of: number | null;
   created_at: string;
   updated_at: string;
   subtasks_total: number;
