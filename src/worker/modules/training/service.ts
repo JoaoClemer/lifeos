@@ -74,7 +74,7 @@ const COLS = `id, sport, title, workout_type, date, time, unplanned, planned_dur
 const decorate = (r: Row): TrainingSession => ({ ...r, unplanned: !!r.unplanned });
 
 export async function getSession(ctx: Ctx, id: number): Promise<TrainingSession> {
-  const row = await ctx.db.prepare(`SELECT ${COLS} FROM training_sessions WHERE id = ?`).bind(id).first<Row>();
+  const row = await ctx.db.prepare(`SELECT ${COLS} FROM training_sessions WHERE id = ? AND user_id = ?`).bind(id, ctx.userId).first<Row>();
   if (!row) throw new UserError(`Treino ${id} não encontrado`, 404);
   return decorate(row);
 }
@@ -83,8 +83,8 @@ export async function getSession(ctx: Ctx, id: number): Promise<TrainingSession>
 export async function listSessions(ctx: Ctx, from: string, to: string, sport?: Sport): Promise<TrainingSession[]> {
   if (!isValidDate(from) || !isValidDate(to) || to < from) throw new UserError("Intervalo inválido (use datas YYYY-MM-DD)");
   const rows = await ctx.db
-    .prepare(`SELECT ${COLS} FROM training_sessions WHERE date BETWEEN ? AND ? ${sport ? "AND sport = ?" : ""} ORDER BY date, COALESCE(time, ''), id`)
-    .bind(...(sport ? [from, to, sport] : [from, to]))
+    .prepare(`SELECT ${COLS} FROM training_sessions WHERE user_id = ? AND date BETWEEN ? AND ? ${sport ? "AND sport = ?" : ""} ORDER BY date, COALESCE(time, ''), id`)
+    .bind(ctx.userId, ...(sport ? [from, to, sport] : [from, to]))
     .all<Row>();
   return rows.results.map(decorate);
 }
@@ -92,16 +92,18 @@ export async function listSessions(ctx: Ctx, from: string, to: string, sport?: S
 /** Treino planejado igual (modalidade, dia e horário) criado há pouco (evita duplicar quando o Claude repete uma chamada). */
 export async function findRecentSession(ctx: Ctx, sport: Sport, date: string, time: string | null, minutes = 10): Promise<TrainingSession | null> {
   const row = await ctx.db
-    .prepare(`SELECT ${COLS} FROM training_sessions WHERE sport = ? AND date = ? AND COALESCE(time, '') = ? AND created_at >= datetime('now', ?) ORDER BY id DESC LIMIT 1`)
-    .bind(sport, date, time ?? "", `-${minutes} minutes`)
+    .prepare(
+      `SELECT ${COLS} FROM training_sessions WHERE user_id = ? AND sport = ? AND date = ? AND COALESCE(time, '') = ? AND created_at >= datetime('now', ?) ORDER BY id DESC LIMIT 1`,
+    )
+    .bind(ctx.userId, sport, date, time ?? "", `-${minutes} minutes`)
     .first<Row>();
   return row ? decorate(row) : null;
 }
 
 /** Treinos realizados (total ou parcialmente), do mais recente para o mais antigo. */
 export async function listHistory(ctx: Ctx, opts: { sport?: Sport; before?: string; limit?: number } = {}): Promise<TrainingSession[]> {
-  const where = ["status IN ('done', 'partial')"];
-  const args: string[] = [];
+  const where = ["user_id = ?", "status IN ('done', 'partial')"];
+  const args: (string | number)[] = [ctx.userId];
   if (opts.sport) (where.push("sport = ?"), args.push(opts.sport));
   if (opts.before) (where.push("date < ?"), args.push(opts.before));
   const rows = await ctx.db
@@ -140,11 +142,12 @@ export async function createSession(ctx: Ctx, input: z.input<typeof SessionInput
   const result = resolveResult({ ...plan, actual_start: null, actual_duration_s: null, actual_distance_m: null, avg_hr: null, max_hr: null, rpe: null, notes: null }, s, status);
   const row = await ctx.db
     .prepare(
-      `INSERT INTO training_sessions (sport, title, workout_type, date, time, unplanned, planned_duration_s, planned_distance_m, planned_intensity, instructions,
+      `INSERT INTO training_sessions (user_id, sport, title, workout_type, date, time, unplanned, planned_duration_s, planned_distance_m, planned_intensity, instructions,
          status, actual_start, actual_duration_s, actual_distance_m, avg_hr, max_hr, rpe, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
     )
     .bind(
+      ctx.userId,
       s.sport,
       nn(s.title),
       nn(s.workout_type),
@@ -190,7 +193,9 @@ export async function updateSession(ctx: Ctx, id: number, patch: z.input<typeof 
   const keys = Object.keys(sets);
   if (!keys.length) return cur;
   await ctx.db.batch([
-    ctx.db.prepare(`UPDATE training_sessions SET ${keys.map((k) => `${k} = ?`).join(", ")}, updated_at = datetime('now') WHERE id = ?`).bind(...Object.values(sets), id),
+    ctx.db
+      .prepare(`UPDATE training_sessions SET ${keys.map((k) => `${k} = ?`).join(", ")}, updated_at = datetime('now') WHERE id = ? AND user_id = ?`)
+      .bind(...Object.values(sets), id, ctx.userId),
     ...(status !== cur.status ? [activity(ctx, "training.status", "training", id, { from: cur.status, to: status })] : []),
   ]);
   return getSession(ctx, id);
@@ -198,7 +203,7 @@ export async function updateSession(ctx: Ctx, id: number, patch: z.input<typeof 
 
 export async function deleteSession(ctx: Ctx, id: number): Promise<TrainingSession> {
   const cur = await getSession(ctx, id);
-  await ctx.db.prepare("DELETE FROM training_sessions WHERE id = ?").bind(id).run();
+  await ctx.db.prepare("DELETE FROM training_sessions WHERE id = ? AND user_id = ?").bind(id, ctx.userId).run();
   return cur;
 }
 
@@ -235,10 +240,10 @@ export async function copyWeek(ctx: Ctx, fromWeek: string, toWeek: string): Prom
     source.map((s) =>
       ctx.db
         .prepare(
-          `INSERT INTO training_sessions (sport, title, workout_type, date, time, planned_duration_s, planned_distance_m, planned_intensity, instructions)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+          `INSERT INTO training_sessions (user_id, sport, title, workout_type, date, time, planned_duration_s, planned_distance_m, planned_intensity, instructions)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
         )
-        .bind(s.sport, s.title, s.workout_type, addDays(s.date, shift), s.time, s.planned_duration_s, s.planned_distance_m, s.planned_intensity, s.instructions),
+        .bind(ctx.userId, s.sport, s.title, s.workout_type, addDays(s.date, shift), s.time, s.planned_duration_s, s.planned_distance_m, s.planned_intensity, s.instructions),
     ),
   );
   return Promise.all(results.map((r) => getSession(ctx, r.results[0].id)));

@@ -51,8 +51,8 @@ type TaskRow = Omit<Task, "tags"> & { tags: string | null };
 
 const SELECT = `SELECT t.id, t.title, t.notes, t.status, t.priority, t.due_date, t.estimate_minutes, t.tags, t.project_id, t.parent_id,
   t.completed_at, t.rrule, t.recurrence_of, t.created_at, t.updated_at,
-  (SELECT COUNT(*) FROM tasks s WHERE s.parent_id = t.id) AS subtasks_total,
-  (SELECT COUNT(*) FROM tasks s WHERE s.parent_id = t.id AND s.status = 'done') AS subtasks_done
+  (SELECT COUNT(*) FROM tasks s WHERE s.parent_id = t.id AND s.user_id = t.user_id) AS subtasks_total,
+  (SELECT COUNT(*) FROM tasks s WHERE s.parent_id = t.id AND s.user_id = t.user_id AND s.status = 'done') AS subtasks_done
   FROM tasks t`;
 
 const decorate = (r: TaskRow): Task => ({ ...r, tags: r.tags ? (JSON.parse(r.tags) as string[]) : [] });
@@ -85,8 +85,8 @@ export interface TaskFilter {
 }
 
 export async function listTasks(ctx: Ctx, f: TaskFilter = {}): Promise<Task[]> {
-  const where: string[] = [];
-  const args: (string | number)[] = [];
+  const where: string[] = ["t.user_id = ?"];
+  const args: (string | number)[] = [ctx.userId];
   const status = f.status ?? "open";
   if (status === "open") where.push("t.status <> 'done'");
   if (status === "done") where.push("t.status = 'done'");
@@ -114,7 +114,7 @@ export async function listTasks(ctx: Ctx, f: TaskFilter = {}): Promise<Task[]> {
 }
 
 export async function getTask(ctx: Ctx, id: number): Promise<Task> {
-  const row = await ctx.db.prepare(`${SELECT} WHERE t.id = ?`).bind(id).first<TaskRow>();
+  const row = await ctx.db.prepare(`${SELECT} WHERE t.id = ? AND t.user_id = ?`).bind(id, ctx.userId).first<TaskRow>();
   if (!row) throw new UserError(`Tarefa ${id} não encontrada`, 404);
   return decorate(row);
 }
@@ -126,7 +126,10 @@ async function checkRelations(ctx: Ctx, taskId: number | null, projectId: number
   const parent = await getTask(ctx, parentId);
   if (parent.parent_id) throw new UserError("Subtarefas têm um nível só: escolha uma tarefa principal");
   if (taskId) {
-    const children = await ctx.db.prepare("SELECT COUNT(*) AS n FROM tasks WHERE parent_id = ?").bind(taskId).first<{ n: number }>();
+    const children = await ctx.db
+      .prepare("SELECT COUNT(*) AS n FROM tasks WHERE parent_id = ? AND user_id = ?")
+      .bind(taskId, ctx.userId)
+      .first<{ n: number }>();
     if (children?.n) throw new UserError("Esta tarefa tem subtarefas e não pode virar subtarefa de outra");
   }
 }
@@ -139,10 +142,11 @@ export async function createTask(ctx: Ctx, input: z.input<typeof TaskInput>): Pr
   if (rrule && t.parent_id) throw new UserError("Subtarefas não se repetem: defina a repetição na tarefa principal");
   const row = await ctx.db
     .prepare(
-      `INSERT INTO tasks (title, notes, status, priority, due_date, estimate_minutes, tags, project_id, parent_id, completed_at, rrule)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+      `INSERT INTO tasks (user_id, title, notes, status, priority, due_date, estimate_minutes, tags, project_id, parent_id, completed_at, rrule)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
     )
     .bind(
+      ctx.userId,
       t.title,
       nn(t.notes),
       status,
@@ -162,7 +166,10 @@ export async function createTask(ctx: Ctx, input: z.input<typeof TaskInput>): Pr
 
 /** A próxima tarefa gerada pela conclusão desta (na repetição), se houver. */
 export async function getSuccessor(ctx: Ctx, id: number): Promise<Task | null> {
-  const row = await ctx.db.prepare(`${SELECT} WHERE t.recurrence_of = ? ORDER BY t.id DESC LIMIT 1`).bind(id).first<TaskRow>();
+  const row = await ctx.db
+    .prepare(`${SELECT} WHERE t.recurrence_of = ? AND t.user_id = ? ORDER BY t.id DESC LIMIT 1`)
+    .bind(id, ctx.userId)
+    .first<TaskRow>();
   return row ? decorate(row) : null;
 }
 
@@ -199,7 +206,9 @@ export async function updateTask(ctx: Ctx, id: number, patch: z.input<typeof Tas
       // para não nascer atrasada nem pular uma vez quando concluída adiantada
       const next = rule && due && !cur.parent_id && !(await getSuccessor(ctx, id)) ? nextDateAfter(due, parseRRule(rule), due > ctx.today ? due : ctx.today) : null;
       extra.push(
-        ctx.db.prepare("UPDATE tasks SET status = 'done', completed_at = ?, updated_at = datetime('now') WHERE parent_id = ? AND status <> 'done'").bind(ctx.now, id),
+        ctx.db
+          .prepare("UPDATE tasks SET status = 'done', completed_at = ?, updated_at = datetime('now') WHERE parent_id = ? AND user_id = ? AND status <> 'done'")
+          .bind(ctx.now, id, ctx.userId),
         activity(ctx, "task.completed", "task", id, { open_subtasks: cur.subtasks_total - cur.subtasks_done, ...(next ? { next_due: next } : {}) }),
       );
       if (next) {
@@ -207,24 +216,25 @@ export async function updateTask(ctx: Ctx, id: number, patch: z.input<typeof Tas
         extra.push(
           ctx.db
             .prepare(
-              `INSERT INTO tasks (title, notes, priority, due_date, estimate_minutes, tags, project_id, rrule, recurrence_of)
-               SELECT title, notes, priority, ?, estimate_minutes, tags, project_id, rrule, id FROM tasks WHERE id = ?`,
+              `INSERT INTO tasks (user_id, title, notes, priority, due_date, estimate_minutes, tags, project_id, rrule, recurrence_of)
+               SELECT user_id, title, notes, priority, ?, estimate_minutes, tags, project_id, rrule, id FROM tasks WHERE id = ? AND user_id = ?`,
             )
-            .bind(next, id),
+            .bind(next, id, ctx.userId),
           ctx.db
             .prepare(
-              `INSERT INTO tasks (title, notes, priority, estimate_minutes, tags, parent_id)
-               SELECT s.title, s.notes, s.priority, s.estimate_minutes, s.tags, (SELECT n.id FROM tasks n WHERE n.recurrence_of = ?1 ORDER BY n.id DESC LIMIT 1)
-               FROM tasks s WHERE s.parent_id = ?1 ORDER BY s.id`,
+              `INSERT INTO tasks (user_id, title, notes, priority, estimate_minutes, tags, parent_id)
+               SELECT s.user_id, s.title, s.notes, s.priority, s.estimate_minutes, s.tags,
+                 (SELECT n.id FROM tasks n WHERE n.recurrence_of = ?1 AND n.user_id = ?2 ORDER BY n.id DESC LIMIT 1)
+               FROM tasks s WHERE s.parent_id = ?1 AND s.user_id = ?2 ORDER BY s.id`,
             )
-            .bind(id),
+            .bind(id, ctx.userId),
         );
       }
     } else if (cur.status === "done") {
       sets.completed_at = null;
       // A próxima da série sai se ainda não foi feita (senão haveria duas abertas)
       extra.push(
-        ctx.db.prepare("DELETE FROM tasks WHERE recurrence_of = ? AND status <> 'done'").bind(id),
+        ctx.db.prepare("DELETE FROM tasks WHERE recurrence_of = ? AND user_id = ? AND status <> 'done'").bind(id, ctx.userId),
         activity(ctx, "task.reopened", "task", id, { completed_at: cur.completed_at }),
       );
     }
@@ -232,7 +242,9 @@ export async function updateTask(ctx: Ctx, id: number, patch: z.input<typeof Tas
   const keys = Object.keys(sets);
   if (!keys.length) return cur;
   await ctx.db.batch([
-    ctx.db.prepare(`UPDATE tasks SET ${keys.map((k) => `${k} = ?`).join(", ")}, updated_at = datetime('now') WHERE id = ?`).bind(...Object.values(sets), id),
+    ctx.db
+      .prepare(`UPDATE tasks SET ${keys.map((k) => `${k} = ?`).join(", ")}, updated_at = datetime('now') WHERE id = ? AND user_id = ?`)
+      .bind(...Object.values(sets), id, ctx.userId),
     ...extra,
   ]);
   return getTask(ctx, id);
@@ -241,7 +253,10 @@ export async function updateTask(ctx: Ctx, id: number, patch: z.input<typeof Tas
 /** Exclui a tarefa e as subtarefas. Horários reservados para ela na agenda viram eventos comuns. */
 export async function deleteTask(ctx: Ctx, id: number): Promise<Task> {
   const cur = await getTask(ctx, id);
-  await ctx.db.batch([ctx.db.prepare("DELETE FROM tasks WHERE id = ?").bind(id), activity(ctx, "task.deleted", "task", id, { title: cur.title })]);
+  await ctx.db.batch([
+    ctx.db.prepare("DELETE FROM tasks WHERE id = ? AND user_id = ?").bind(id, ctx.userId),
+    activity(ctx, "task.deleted", "task", id, { title: cur.title }),
+  ]);
   return cur;
 }
 
@@ -252,15 +267,15 @@ export async function resolveTask(ctx: Ctx, title: string, status: TaskFilter["s
 }
 
 async function listSubtasksOfOpen(ctx: Ctx, status: TaskFilter["status"]): Promise<Task[]> {
-  const sql = `${SELECT} WHERE t.parent_id IS NOT NULL${status === "open" ? " AND t.status <> 'done'" : status === "done" ? " AND t.status = 'done'" : ""} LIMIT 1000`;
-  return (await ctx.db.prepare(sql).all<TaskRow>()).results.map(decorate);
+  const sql = `${SELECT} WHERE t.user_id = ? AND t.parent_id IS NOT NULL${status === "open" ? " AND t.status <> 'done'" : status === "done" ? " AND t.status = 'done'" : ""} LIMIT 1000`;
+  return (await ctx.db.prepare(sql).bind(ctx.userId).all<TaskRow>()).results.map(decorate);
 }
 
 /** Tarefa com o mesmo título criada há pouco (evita duplicar quando o Claude repete uma chamada). */
 export async function findRecentTask(ctx: Ctx, title: string, minutes = 10): Promise<Task | null> {
   const row = await ctx.db
-    .prepare("SELECT id FROM tasks WHERE lower(title) = lower(?) AND parent_id IS NULL AND created_at >= datetime('now', ?) ORDER BY id DESC LIMIT 1")
-    .bind(title.trim(), `-${minutes} minutes`)
+    .prepare("SELECT id FROM tasks WHERE user_id = ? AND lower(title) = lower(?) AND parent_id IS NULL AND created_at >= datetime('now', ?) ORDER BY id DESC LIMIT 1")
+    .bind(ctx.userId, title.trim(), `-${minutes} minutes`)
     .first<{ id: number }>();
   return row ? getTask(ctx, row.id) : null;
 }
@@ -268,7 +283,8 @@ export async function findRecentTask(ctx: Ctx, title: string, minutes = 10): Pro
 /** Etiquetas já usadas, das mais frequentes para as menos. */
 export async function listTags(ctx: Ctx): Promise<string[]> {
   const rows = await ctx.db
-    .prepare("SELECT j.value AS tag, COUNT(*) AS n FROM tasks t, json_each(t.tags) j GROUP BY lower(j.value) ORDER BY n DESC, tag LIMIT 50")
+    .prepare("SELECT j.value AS tag, COUNT(*) AS n FROM tasks t, json_each(t.tags) j WHERE t.user_id = ? GROUP BY lower(j.value) ORDER BY n DESC, tag LIMIT 50")
+    .bind(ctx.userId)
     .all<{ tag: string }>();
   return rows.results.map((r) => r.tag);
 }
@@ -276,18 +292,18 @@ export async function listTags(ctx: Ctx): Promise<string[]> {
 // ---------- projetos ----------
 
 const PROJECT_SELECT = `SELECT p.id, p.name, p.description, p.status, p.due_date, p.color,
-  (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.parent_id IS NULL AND t.status <> 'done') AS open_count,
-  (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.parent_id IS NULL AND t.status = 'done') AS done_count
+  (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.user_id = p.user_id AND t.parent_id IS NULL AND t.status <> 'done') AS open_count,
+  (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.user_id = p.user_id AND t.parent_id IS NULL AND t.status = 'done') AS done_count
   FROM projects p`;
 
 export async function listProjects(ctx: Ctx, includeArchived = false): Promise<Project[]> {
-  const sql = `${PROJECT_SELECT} ${includeArchived ? "" : "WHERE p.status <> 'archived'"}
+  const sql = `${PROJECT_SELECT} WHERE p.user_id = ? ${includeArchived ? "" : "AND p.status <> 'archived'"}
     ORDER BY CASE p.status WHEN 'active' THEN 0 WHEN 'paused' THEN 1 WHEN 'done' THEN 2 ELSE 3 END, p.name COLLATE NOCASE`;
-  return (await ctx.db.prepare(sql).all<Project>()).results;
+  return (await ctx.db.prepare(sql).bind(ctx.userId).all<Project>()).results;
 }
 
 export async function getProject(ctx: Ctx, id: number): Promise<Project> {
-  const row = await ctx.db.prepare(`${PROJECT_SELECT} WHERE p.id = ?`).bind(id).first<Project>();
+  const row = await ctx.db.prepare(`${PROJECT_SELECT} WHERE p.id = ? AND p.user_id = ?`).bind(id, ctx.userId).first<Project>();
   if (!row) throw new UserError(`Projeto ${id} não encontrado`, 404);
   return row;
 }
@@ -295,8 +311,8 @@ export async function getProject(ctx: Ctx, id: number): Promise<Project> {
 export async function createProject(ctx: Ctx, input: z.input<typeof ProjectInput>): Promise<Project> {
   const p = ProjectInput.parse(input);
   const row = await ctx.db
-    .prepare("INSERT INTO projects (name, description, status, due_date, color) VALUES (?, ?, ?, ?, ?) RETURNING id")
-    .bind(p.name, nn(p.description), p.status ?? "active", nn(p.due_date), nn(p.color))
+    .prepare("INSERT INTO projects (user_id, name, description, status, due_date, color) VALUES (?, ?, ?, ?, ?, ?) RETURNING id")
+    .bind(ctx.userId, p.name, nn(p.description), p.status ?? "active", nn(p.due_date), nn(p.color))
     .first<{ id: number }>();
   return getProject(ctx, row!.id);
 }
@@ -304,14 +320,14 @@ export async function createProject(ctx: Ctx, input: z.input<typeof ProjectInput
 export async function updateProject(ctx: Ctx, id: number, patch: z.input<typeof ProjectPatch>): Promise<Project> {
   const p = ProjectPatch.parse(patch);
   const updated_at = new Date().toISOString().replace("T", " ").slice(0, 19); // mesmo formato de datetime('now')
-  await updateRow(ctx.db, "projects", id, { ...p, updated_at }, ["name", "description", "status", "due_date", "color", "updated_at"]);
+  await updateRow(ctx, "projects", id, { ...p, updated_at }, ["name", "description", "status", "due_date", "color", "updated_at"]);
   return getProject(ctx, id);
 }
 
 /** Exclui o projeto; as tarefas continuam, sem projeto. */
 export async function deleteProject(ctx: Ctx, id: number): Promise<Project> {
   const cur = await getProject(ctx, id);
-  await ctx.db.prepare("DELETE FROM projects WHERE id = ?").bind(id).run();
+  await ctx.db.prepare("DELETE FROM projects WHERE id = ? AND user_id = ?").bind(id, ctx.userId).run();
   return cur;
 }
 

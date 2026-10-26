@@ -1,9 +1,8 @@
 import { Hono } from "hono";
-import { idParam, limitParam, makeCtx, UserError } from "../../lib";
+import { type AppEnv, ctxOf, idParam, limitParam, UserError } from "../../lib";
 import * as tasks from "./service";
 
-export const tasksRoutes = new Hono<{ Bindings: Env }>();
-const ctxOf = (c: { env: Env }) => makeCtx(c.env);
+export const tasksRoutes = new Hono<AppEnv>();
 const optionalId = (v: string | undefined) => (v ? idParam(v) : undefined);
 
 tasksRoutes.get("/tasks", async (c) => {

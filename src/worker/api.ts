@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { MONTH_RE } from "../shared/month";
-import { idParam, limitParam, makeCtx, UserError } from "./lib";
+import { type AppEnv, ctxOf, idParam, limitParam, OWNER_USER_ID, UserError } from "./lib";
 import { agendaRoutes } from "./modules/agenda/routes";
 import { tasksRoutes } from "./modules/tasks/routes";
 import { todayRoutes } from "./modules/today/routes";
@@ -16,10 +16,8 @@ import * as receivables from "./services/receivables";
 import * as recurring from "./services/recurring";
 import * as summary from "./services/summary";
 
-type App = { Bindings: Env };
-export const api = new Hono<App>();
+export const api = new Hono<AppEnv>();
 
-const ctxOf = (c: { env: Env }) => makeCtx(c.env);
 const monthQuery = (v: string | undefined, fallback: string) => {
   if (!v) return fallback;
   if (!MONTH_RE.test(v)) throw new UserError("mês inválido (use YYYY-MM)");
@@ -104,8 +102,13 @@ api.get("/receivables", async (c) => {
   );
 });
 api.get("/people", async (c) => c.json(await receivables.listPeople(ctxOf(c))));
-// Quem já pode acompanhar os próprios valores em /devedor (tem DEBTOR_CODE_<NOME> configurado)
-api.get("/receivables/access", async (c) => c.json((await peopleWithAccess(ctxOf(c), debtorCodes(c.env))).map((p) => p.name)));
+// Quem já pode acompanhar os próprios valores em /devedor (tem DEBTOR_CODE_<NOME> configurado).
+// Os códigos são do dono do app: para outras pessoas, ninguém tem acesso.
+api.get("/receivables/access", async (c) => {
+  const ctx = ctxOf(c);
+  if (ctx.userId !== OWNER_USER_ID) return c.json([]);
+  return c.json((await peopleWithAccess(ctx, debtorCodes(c.env))).map((p) => p.name));
+});
 api.post("/receivables", async (c) => {
   const rows = await receivables.createReceivable(ctxOf(c), await c.req.json());
   // Mantém a resposta de antes (o devedor criado); parcelados devolvem a 1ª parcela + todas em `installments`

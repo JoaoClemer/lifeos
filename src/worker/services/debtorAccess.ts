@@ -46,7 +46,7 @@ type Row = DebtorItem & { installment_group: string | null };
 /** Tudo o que a pessoa deve (em aberto e parcelas futuras) e o que já pagou. Sem cartão, ids ou dados de outras pessoas. */
 export async function debtorStatement(ctx: Ctx, key: string, person: string): Promise<DebtorStatement> {
   // A mesma pessoa pode ter sido escrita de jeitos diferentes ("jose", "José"): junta todas as grafias
-  const spellings = (await ctx.db.prepare("SELECT DISTINCT person FROM receivables").all<{ person: string }>()).results
+  const spellings = (await ctx.db.prepare("SELECT DISTINCT person FROM receivables WHERE user_id = ?").bind(ctx.userId).all<{ person: string }>()).results
     .map((r) => r.person)
     .filter((p) => personKey(p) === key);
   const rows = spellings.length
@@ -54,10 +54,10 @@ export async function debtorStatement(ctx: Ctx, key: string, person: string): Pr
         await ctx.db
           .prepare(
             `SELECT description, amount_cents, date, month, received_at, installment_group, installment_no, installment_total
-             FROM receivables WHERE person IN (${spellings.map(() => "?").join(", ")})
+             FROM receivables WHERE user_id = ? AND person IN (${spellings.map(() => "?").join(", ")})
              ORDER BY date DESC, id DESC`,
           )
-          .bind(...spellings)
+          .bind(ctx.userId, ...spellings)
           .all<Row>()
       ).results
     : [];

@@ -41,15 +41,15 @@ export interface ReceivableFilter {
 }
 
 export async function listReceivables(ctx: Ctx, f: ReceivableFilter = {}): Promise<Receivable[]> {
-  const where: string[] = [];
-  const args: string[] = [];
+  const where: string[] = ["user_id = ?"];
+  const args: (string | number)[] = [ctx.userId];
   const status = f.status ?? "pending";
   if (status === "pending") where.push("received_at IS NULL");
   if (status === "received") where.push("received_at IS NOT NULL");
   if (f.month) (where.push("month = ?"), args.push(f.month));
   let rows = (
     await ctx.db
-      .prepare(`SELECT ${COLS} FROM receivables ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY date DESC, id DESC LIMIT 1000`)
+      .prepare(`SELECT ${COLS} FROM receivables WHERE ${where.join(" AND ")} ORDER BY date DESC, id DESC LIMIT 1000`)
       .bind(...args)
       .all<Receivable>()
   ).results;
@@ -61,7 +61,7 @@ export async function listReceivables(ctx: Ctx, f: ReceivableFilter = {}): Promi
 }
 
 export async function getReceivable(ctx: Ctx, id: number): Promise<Receivable> {
-  const row = await ctx.db.prepare(`SELECT ${COLS} FROM receivables WHERE id = ?`).bind(id).first<Receivable>();
+  const row = await ctx.db.prepare(`SELECT ${COLS} FROM receivables WHERE id = ? AND user_id = ?`).bind(id, ctx.userId).first<Receivable>();
   if (!row) throw new UserError(`Devedor ${id} não encontrado`, 404);
   return row;
 }
@@ -73,16 +73,16 @@ export async function getReceivable(ctx: Ctx, id: number): Promise<Receivable> {
 export async function createReceivable(ctx: Ctx, input: z.input<typeof ReceivableInput>): Promise<Receivable[]> {
   const r = ReceivableInput.parse(input);
   const date = r.date ?? ctx.today;
-  const account = r.account_id ? await mustGet<Account>(ctx.db, "accounts", r.account_id, "Conta") : null;
+  const account = r.account_id ? await mustGet<Account>(ctx, "accounts", r.account_id, "Conta") : null;
   const person = await canonicalPerson(ctx, r.person);
   const n = r.installments ?? 1;
 
   if (n === 1) {
     const row = await ctx.db
       .prepare(
-        `INSERT INTO receivables (person, description, amount_cents, date, month, account_id) VALUES (?, ?, ?, ?, ?, ?) RETURNING id`,
+        `INSERT INTO receivables (user_id, person, description, amount_cents, date, month, account_id) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`,
       )
-      .bind(person, r.description, r.amount_cents ?? r.total_cents!, date, r.month ?? referenceMonth(date, account), account?.id ?? null)
+      .bind(ctx.userId, person, r.description, r.amount_cents ?? r.total_cents!, date, r.month ?? referenceMonth(date, account), account?.id ?? null)
       .first<{ id: number }>();
     return [await getReceivable(ctx, row!.id)];
   }
@@ -105,27 +105,31 @@ export async function createReceivable(ctx: Ctx, input: z.input<typeof Receivabl
     stmts.push(
       ctx.db
         .prepare(
-          `INSERT INTO receivables (person, description, amount_cents, date, month, account_id, installment_group, installment_no, installment_total)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO receivables (user_id, person, description, amount_cents, date, month, account_id, installment_group, installment_no, installment_total)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
-        .bind(person, r.description, amountOf(k), date, addMonths(firstMonth, k - 1), account?.id ?? null, group, k, n),
+        .bind(ctx.userId, person, r.description, amountOf(k), date, addMonths(firstMonth, k - 1), account?.id ?? null, group, k, n),
     );
   }
   await ctx.db.batch(stmts);
   return (
-    await ctx.db.prepare(`SELECT ${COLS} FROM receivables WHERE installment_group = ? ORDER BY installment_no`).bind(group).all<Receivable>()
+    await ctx.db
+      .prepare(`SELECT ${COLS} FROM receivables WHERE installment_group = ? AND user_id = ? ORDER BY installment_no`)
+      .bind(group, ctx.userId)
+      .all<Receivable>()
   ).results;
 }
 
 export async function updateReceivable(ctx: Ctx, id: number, patch: z.input<typeof ReceivablePatch>): Promise<Receivable> {
   const p = ReceivablePatch.parse(patch);
-  await updateRow(ctx.db, "receivables", id, p, ["person", "description", "amount_cents", "date", "month", "account_id", "received_at"]);
+  if (p.account_id) await mustGet(ctx, "accounts", p.account_id, "Conta");
+  await updateRow(ctx, "receivables", id, p, ["person", "description", "amount_cents", "date", "month", "account_id", "received_at"]);
   return getReceivable(ctx, id);
 }
 
 export async function deleteReceivable(ctx: Ctx, id: number): Promise<Receivable> {
   const cur = await getReceivable(ctx, id);
-  await ctx.db.prepare("DELETE FROM receivables WHERE id = ?").bind(id).run();
+  await ctx.db.prepare("DELETE FROM receivables WHERE id = ? AND user_id = ?").bind(id, ctx.userId).run();
   return cur;
 }
 
@@ -135,11 +139,14 @@ export async function deleteReceivableGroup(ctx: Ctx, id: number): Promise<{ del
   if (!cur.installment_group) return { deleted: [await deleteReceivable(ctx, id)] };
   const pending = (
     await ctx.db
-      .prepare(`SELECT ${COLS} FROM receivables WHERE installment_group = ? AND received_at IS NULL ORDER BY installment_no`)
-      .bind(cur.installment_group)
+      .prepare(`SELECT ${COLS} FROM receivables WHERE installment_group = ? AND user_id = ? AND received_at IS NULL ORDER BY installment_no`)
+      .bind(cur.installment_group, ctx.userId)
       .all<Receivable>()
   ).results;
-  await ctx.db.prepare("DELETE FROM receivables WHERE installment_group = ? AND received_at IS NULL").bind(cur.installment_group).run();
+  await ctx.db
+    .prepare("DELETE FROM receivables WHERE installment_group = ? AND user_id = ? AND received_at IS NULL")
+    .bind(cur.installment_group, ctx.userId)
+    .run();
   return { deleted: pending };
 }
 
@@ -161,7 +168,9 @@ export async function markReceived(
   } else throw new UserError("Informe ids ou pessoa");
   if (targets.length === 0) return [];
   const value = opts.undo ? null : (opts.date ?? ctx.today);
-  await ctx.db.batch(targets.map((t) => ctx.db.prepare("UPDATE receivables SET received_at = ? WHERE id = ?").bind(value, t.id)));
+  await ctx.db.batch(
+    targets.map((t) => ctx.db.prepare("UPDATE receivables SET received_at = ? WHERE id = ? AND user_id = ?").bind(value, t.id, ctx.userId)),
+  );
   return targets.map((t) => ({ ...t, received_at: value }));
 }
 
@@ -169,7 +178,8 @@ export async function markReceived(
 export async function listPeople(ctx: Ctx): Promise<string[]> {
   const rows = (
     await ctx.db
-      .prepare("SELECT person, COUNT(*) n, MAX(date) d FROM receivables GROUP BY person ORDER BY d DESC, n DESC")
+      .prepare("SELECT person, COUNT(*) n, MAX(date) d FROM receivables WHERE user_id = ? GROUP BY person ORDER BY d DESC, n DESC")
+      .bind(ctx.userId)
       .all<{ person: string; n: number }>()
   ).results;
   const best = new Map<string, { person: string; n: number }>();

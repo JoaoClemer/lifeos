@@ -34,7 +34,7 @@ export const ExpensePatch = z.object({
 });
 
 const SELECT = `SELECT e.id, e.description, e.amount_cents, e.date, e.month, e.account_id, e.budget_id, e.notes,
-  COALESCE((SELECT SUM(r.amount_cents) FROM receivables r WHERE r.expense_id = e.id), 0) AS shared_cents
+  COALESCE((SELECT SUM(r.amount_cents) FROM receivables r WHERE r.expense_id = e.id AND r.user_id = e.user_id), 0) AS shared_cents
   FROM expenses e`;
 
 export interface ExpenseFilter {
@@ -48,31 +48,34 @@ export interface ExpenseFilter {
 }
 
 export async function listExpenses(ctx: Ctx, f: ExpenseFilter): Promise<Expense[]> {
-  const where: string[] = [];
-  const args: (string | number)[] = [];
+  const where: string[] = ["e.user_id = ?"];
+  const args: (string | number)[] = [ctx.userId];
   if (f.month) (where.push("e.month = ?"), args.push(f.month));
   if (f.date) (where.push("e.date = ?"), args.push(f.date));
   if (f.account_id) (where.push("e.account_id = ?"), args.push(f.account_id));
   if (f.budget_id) (where.push("e.budget_id = ?"), args.push(f.budget_id));
   if (f.search) (where.push("e.description LIKE ?"), args.push(`%${f.search}%`));
-  const sql = `${SELECT} ${where.length ? "WHERE " + where.join(" AND ") : ""}
+  const sql = `${SELECT} WHERE ${where.join(" AND ")}
     ORDER BY e.date DESC, e.id DESC LIMIT ${Math.min(f.limit ?? 500, 2000)}`;
   return (await ctx.db.prepare(sql).bind(...args).all<Expense>()).results;
 }
 
 export async function getExpense(ctx: Ctx, id: number): Promise<Expense> {
-  const row = await ctx.db.prepare(`${SELECT} WHERE e.id = ?`).bind(id).first<Expense>();
+  const row = await ctx.db.prepare(`${SELECT} WHERE e.id = ? AND e.user_id = ?`).bind(id, ctx.userId).first<Expense>();
   if (!row) throw new UserError(`Lançamento ${id} não encontrado`, 404);
   return row;
 }
 
 async function accountOrNull(ctx: Ctx, id: number | null | undefined): Promise<Account | null> {
-  return id ? mustGet<Account>(ctx.db, "accounts", id, "Conta") : null;
+  return id ? mustGet<Account>(ctx, "accounts", id, "Conta") : null;
 }
 
 async function checkBudget(ctx: Ctx, budgetId: number | null | undefined) {
   if (!budgetId) return;
-  const b = await ctx.db.prepare("SELECT is_budget FROM recurring WHERE id = ?").bind(budgetId).first<{ is_budget: number }>();
+  const b = await ctx.db
+    .prepare("SELECT is_budget FROM recurring WHERE id = ? AND user_id = ?")
+    .bind(budgetId, ctx.userId)
+    .first<{ is_budget: number }>();
   if (!b) throw new UserError(`Orçamento ${budgetId} não encontrado`, 404);
   if (!b.is_budget) throw new UserError(`O fixo ${budgetId} não é um orçamento`);
 }
@@ -104,19 +107,19 @@ export async function createExpense(ctx: Ctx, input: z.input<typeof ExpenseInput
     stmts.push(
       ctx.db
         .prepare(
-          `INSERT INTO expenses (description, amount_cents, date, month, account_id, budget_id, notes) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO expenses (user_id, description, amount_cents, date, month, account_id, budget_id, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         )
-        .bind(e.description, myShare, date, month, account?.id ?? null, nn(e.budget_id), nn(e.notes)),
+        .bind(ctx.userId, e.description, myShare, date, month, account?.id ?? null, nn(e.budget_id), nn(e.notes)),
     );
   }
   for (const s of splits) {
     stmts.push(
       ctx.db
         .prepare(
-          `INSERT INTO receivables (person, description, amount_cents, date, month, account_id, expense_id)
-           VALUES (?, ?, ?, ?, ?, ?, ${myShare > 0 ? "(SELECT MAX(id) FROM expenses)" : "NULL"}) RETURNING id`,
+          `INSERT INTO receivables (user_id, person, description, amount_cents, date, month, account_id, expense_id)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ${myShare > 0 ? "(SELECT MAX(id) FROM expenses WHERE user_id = ?1)" : "NULL"}) RETURNING id`,
         )
-        .bind(s.person, e.description, s.amount_cents, date, month, account?.id ?? null),
+        .bind(ctx.userId, s.person, e.description, s.amount_cents, date, month, account?.id ?? null),
     );
   }
   // batch = transação: o gasto e as partes dos outros entram juntos
@@ -134,13 +137,14 @@ export async function createExpense(ctx: Ctx, input: z.input<typeof ExpenseInput
 export async function updateExpense(ctx: Ctx, id: number, patch: z.input<typeof ExpensePatch>): Promise<Expense> {
   const p = ExpensePatch.parse(patch);
   const current = await getExpense(ctx, id);
+  if (p.account_id) await accountOrNull(ctx, p.account_id);
   if (p.budget_id !== undefined) await checkBudget(ctx, p.budget_id);
   // Se mudou data ou conta e o mês não foi informado, recalcula o mês da fatura
   if (p.month === undefined && (p.date !== undefined || p.account_id !== undefined)) {
     const account = await accountOrNull(ctx, p.account_id !== undefined ? p.account_id : current.account_id);
     p.month = referenceMonth(p.date ?? current.date, account);
   }
-  await updateRow(ctx.db, "expenses", id, p, ["description", "amount_cents", "date", "month", "account_id", "budget_id", "notes"]);
+  await updateRow(ctx, "expenses", id, p, ["description", "amount_cents", "date", "month", "account_id", "budget_id", "notes"]);
   return getExpense(ctx, id);
 }
 
@@ -148,8 +152,8 @@ export async function updateExpense(ctx: Ctx, id: number, patch: z.input<typeof 
 export async function deleteExpense(ctx: Ctx, id: number): Promise<Expense> {
   const current = await getExpense(ctx, id);
   await ctx.db.batch([
-    ctx.db.prepare("DELETE FROM receivables WHERE expense_id = ? AND received_at IS NULL").bind(id),
-    ctx.db.prepare("DELETE FROM expenses WHERE id = ?").bind(id),
+    ctx.db.prepare("DELETE FROM receivables WHERE expense_id = ? AND user_id = ? AND received_at IS NULL").bind(id, ctx.userId),
+    ctx.db.prepare("DELETE FROM expenses WHERE id = ? AND user_id = ?").bind(id, ctx.userId),
   ]);
   return current;
 }

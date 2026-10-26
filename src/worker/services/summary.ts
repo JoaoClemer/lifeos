@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { AccountTotal, AccountType, Settings, Summary } from "../../shared/types";
-import { type Ctx, normalize } from "../lib";
+import { type Ctx, mustGet, normalize } from "../lib";
 import { listAccounts } from "./accounts";
 import { listExpenses } from "./expenses";
 import { listGoals } from "./goals";
@@ -16,7 +16,9 @@ export const SettingsPatch = z.object({
 });
 
 export async function getSettings(ctx: Ctx): Promise<Settings> {
-  const rows = (await ctx.db.prepare("SELECT key, value FROM settings").all<{ key: string; value: string | null }>()).results;
+  const rows = (
+    await ctx.db.prepare("SELECT key, value FROM user_settings WHERE user_id = ?").bind(ctx.userId).all<{ key: string; value: string | null }>()
+  ).results;
   const map = Object.fromEntries(rows.map((r) => [r.key, r.value]));
   const num = (k: string) => (map[k] != null && map[k] !== "" ? Number(map[k]) : null);
   return { income_cents: num("income_cents"), default_account_id: num("default_account_id") };
@@ -24,12 +26,13 @@ export async function getSettings(ctx: Ctx): Promise<Settings> {
 
 export async function updateSettings(ctx: Ctx, patch: z.input<typeof SettingsPatch>): Promise<Settings> {
   const p = SettingsPatch.parse(patch);
+  if (p.default_account_id) await mustGet(ctx, "accounts", p.default_account_id, "Conta");
   const stmts = Object.entries(p)
     .filter(([, v]) => v !== undefined)
     .map(([k, v]) =>
       ctx.db
-        .prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value")
-        .bind(k, v === null ? null : String(v)),
+        .prepare("INSERT INTO user_settings (user_id, key, value) VALUES (?, ?, ?) ON CONFLICT (user_id, key) DO UPDATE SET value = excluded.value")
+        .bind(ctx.userId, k, v === null ? null : String(v)),
     );
   if (stmts.length) await ctx.db.batch(stmts);
   return getSettings(ctx);
@@ -154,17 +157,18 @@ export async function getSummary(ctx: Ctx, month: string): Promise<Summary> {
   };
 }
 
-/** Backup completo em JSON. */
+/** Backup em JSON de tudo o que é da pessoa. */
 export async function exportAll(ctx: Ctx) {
   const tables = [
-    "accounts", "recurring", "recurring_months", "installments", "expenses", "receivables", "incomes", "month_balances", "goals", "goal_entries", "settings",
+    "accounts", "recurring", "recurring_months", "installments", "expenses", "receivables", "incomes", "user_month_balances", "goals", "goal_entries", "user_settings",
     // LifeOS
     "projects", "tasks", "events", "activity_log", "training_sessions",
   ];
-  const results = await ctx.db.batch(tables.map((t) => ctx.db.prepare(`SELECT * FROM ${t}`)));
+  const results = await ctx.db.batch(tables.map((t) => ctx.db.prepare(`SELECT * FROM ${t} WHERE user_id = ?`).bind(ctx.userId)));
   return {
     exported_at: new Date().toISOString(),
-    version: 4,
+    // 5: só os dados da pessoa; configurações e saldos ajustados em user_settings e user_month_balances
+    version: 5,
     tables: Object.fromEntries(tables.map((t, i) => [t, results[i].results])),
   };
 }

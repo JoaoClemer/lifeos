@@ -26,21 +26,22 @@ interface Bulk {
 }
 
 async function loadBulk(ctx: Ctx): Promise<Bulk> {
+  // Todas filtram pelo dono (?1)
   const sql = [
-    "SELECT installment_cents, first_month, last_month FROM installments",
-    "SELECT id, amount_cents, is_budget, start_month, end_month FROM recurring",
-    "SELECT recurring_id, month, amount_cents FROM recurring_months WHERE amount_cents IS NOT NULL",
-    "SELECT month, budget_id, SUM(amount_cents) AS total FROM expenses GROUP BY month, budget_id",
-    "SELECT month, SUM(amount_cents) AS total FROM incomes GROUP BY month",
+    "SELECT installment_cents, first_month, last_month FROM installments WHERE user_id = ?1",
+    "SELECT id, amount_cents, is_budget, start_month, end_month FROM recurring WHERE user_id = ?1",
+    "SELECT recurring_id, month, amount_cents FROM recurring_months WHERE user_id = ?1 AND amount_cents IS NOT NULL",
+    "SELECT month, budget_id, SUM(amount_cents) AS total FROM expenses WHERE user_id = ?1 GROUP BY month, budget_id",
+    "SELECT month, SUM(amount_cents) AS total FROM incomes WHERE user_id = ?1 GROUP BY month",
     `SELECT g.id, g.name, g.institution, g.target_cents, g.monthly_cents, g.deadline, g.start_month, g.color, g.archived,
-       COALESCE((SELECT SUM(amount_cents) FROM goal_entries WHERE goal_id = g.id), 0) AS balance_cents
-     FROM goals g WHERE g.archived = 0`,
-    "SELECT goal_id, month, SUM(amount_cents) AS total FROM goal_entries WHERE kind IN ('contribution', 'withdrawal') GROUP BY goal_id, month",
-    "SELECT key, value FROM settings WHERE key IN ('income_cents', 'balance_start_month')",
-    "SELECT month, opening_cents, note FROM month_balances",
+       COALESCE((SELECT SUM(amount_cents) FROM goal_entries WHERE goal_id = g.id AND user_id = g.user_id), 0) AS balance_cents
+     FROM goals g WHERE g.user_id = ?1 AND g.archived = 0`,
+    "SELECT goal_id, month, SUM(amount_cents) AS total FROM goal_entries WHERE user_id = ?1 AND kind IN ('contribution', 'withdrawal') GROUP BY goal_id, month",
+    "SELECT key, value FROM user_settings WHERE user_id = ?1 AND key IN ('income_cents', 'balance_start_month')",
+    "SELECT month, opening_cents, note FROM user_month_balances WHERE user_id = ?1",
   ];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const r = (await ctx.db.batch(sql.map((s) => ctx.db.prepare(s)))).map((x) => x.results as any[]);
+  const r = (await ctx.db.batch(sql.map((s) => ctx.db.prepare(s).bind(ctx.userId)))).map((x) => x.results as any[]);
   const settings = Object.fromEntries(r[7].map((s: { key: string; value: string | null }) => [s.key, s.value]));
   return {
     installments: r[0],
@@ -119,16 +120,16 @@ export async function setOpeningBalance(ctx: Ctx, month: string, input: z.input<
   const o = OpeningInput.parse(input);
   await ctx.db
     .prepare(
-      `INSERT INTO month_balances (month, opening_cents, note, updated_at) VALUES (?, ?, ?, datetime('now'))
-       ON CONFLICT (month) DO UPDATE SET opening_cents = excluded.opening_cents, note = excluded.note, updated_at = excluded.updated_at`,
+      `INSERT INTO user_month_balances (user_id, month, opening_cents, note, updated_at) VALUES (?, ?, ?, ?, datetime('now'))
+       ON CONFLICT (user_id, month) DO UPDATE SET opening_cents = excluded.opening_cents, note = excluded.note, updated_at = excluded.updated_at`,
     )
-    .bind(month, o.opening_cents, o.note ?? null)
+    .bind(ctx.userId, month, o.opening_cents, o.note ?? null)
     .run();
   return getMonthBalance(ctx, month);
 }
 
 /** Remove o ajuste manual: o saldo inicial volta a vir do mês anterior. */
 export async function clearOpeningBalance(ctx: Ctx, month: string): Promise<MonthBalance | null> {
-  await ctx.db.prepare("DELETE FROM month_balances WHERE month = ?").bind(month).run();
+  await ctx.db.prepare("DELETE FROM user_month_balances WHERE user_id = ? AND month = ?").bind(ctx.userId, month).run();
   return getMonthBalance(ctx, month);
 }

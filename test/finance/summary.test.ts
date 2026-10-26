@@ -4,7 +4,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { addMonths } from "../../src/shared/month";
 import { clearOpeningBalance, getMonthBalance, setOpeningBalance } from "../../src/worker/services/balance";
 import { exportAll, getSummary } from "../../src/worker/services/summary";
-import { resetFinance, testCtx } from "../fixtures/finance";
+import { resetFinance, testCtx, TODAY } from "../fixtures/finance";
+import { OWNED_TABLES } from "../ownerGuard";
 
 const ctx = testCtx(env.DB);
 
@@ -102,13 +103,22 @@ describe("saldo acumulado", () => {
 });
 
 describe("backup", () => {
-  it("exportAll inclui todas as tabelas do banco", async () => {
+  it("exportAll inclui todas as tabelas com dono, e toda tabela do banco está classificada", async () => {
     const backup = await exportAll(ctx);
     const { results } = await env.DB.prepare(
       `SELECT name FROM sqlite_master WHERE type = 'table'
        AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name <> 'd1_migrations'`,
     ).all<{ name: string }>();
-    expect(Object.keys(backup.tables).sort()).toEqual(results.map((r) => r.name).sort());
+    // Sem dono: pessoas e as tabelas antigas de configurações e saldos (paradas desde a 0010, só para rollback)
+    const notOwned = ["users", "settings", "month_balances"];
+    expect(results.map((r) => r.name).sort()).toEqual([...OWNED_TABLES, ...notOwned].sort());
+    expect(Object.keys(backup.tables).sort()).toEqual([...OWNED_TABLES].sort());
     expect(backup.tables.expenses).toHaveLength(9);
+  });
+
+  it("exporta só os dados da pessoa", async () => {
+    await env.DB.prepare("INSERT INTO users (id, role) VALUES (2, 'member')").run();
+    const other = await exportAll(testCtx(env.DB, TODAY, "10:00", 2));
+    for (const [table, rows] of Object.entries(other.tables)) expect(rows, table).toEqual([]);
   });
 });

@@ -17,13 +17,13 @@ const COLS = "id, description, amount_cents, date, month, notes";
 
 export async function listIncomes(ctx: Ctx, month?: string): Promise<Income[]> {
   const stmt = month
-    ? ctx.db.prepare(`SELECT ${COLS} FROM incomes WHERE month = ? ORDER BY date DESC, id DESC`).bind(month)
-    : ctx.db.prepare(`SELECT ${COLS} FROM incomes ORDER BY date DESC, id DESC LIMIT 500`);
+    ? ctx.db.prepare(`SELECT ${COLS} FROM incomes WHERE user_id = ? AND month = ? ORDER BY date DESC, id DESC`).bind(ctx.userId, month)
+    : ctx.db.prepare(`SELECT ${COLS} FROM incomes WHERE user_id = ? ORDER BY date DESC, id DESC LIMIT 500`).bind(ctx.userId);
   return (await stmt.all<Income>()).results;
 }
 
 export async function getIncome(ctx: Ctx, id: number): Promise<Income> {
-  const row = await ctx.db.prepare(`SELECT ${COLS} FROM incomes WHERE id = ?`).bind(id).first<Income>();
+  const row = await ctx.db.prepare(`SELECT ${COLS} FROM incomes WHERE id = ? AND user_id = ?`).bind(id, ctx.userId).first<Income>();
   if (!row) throw new UserError(`Entrada ${id} não encontrada`, 404);
   return row;
 }
@@ -32,8 +32,8 @@ export async function createIncome(ctx: Ctx, input: z.input<typeof IncomeInput>)
   const i = IncomeInput.parse(input);
   const date = i.date ?? ctx.today;
   const row = await ctx.db
-    .prepare(`INSERT INTO incomes (description, amount_cents, date, month, notes) VALUES (?, ?, ?, ?, ?) RETURNING id`)
-    .bind(i.description, i.amount_cents, date, i.month ?? monthOf(date), nn(i.notes))
+    .prepare(`INSERT INTO incomes (user_id, description, amount_cents, date, month, notes) VALUES (?, ?, ?, ?, ?, ?) RETURNING id`)
+    .bind(ctx.userId, i.description, i.amount_cents, date, i.month ?? monthOf(date), nn(i.notes))
     .first<{ id: number }>();
   return getIncome(ctx, row!.id);
 }
@@ -42,12 +42,12 @@ export async function updateIncome(ctx: Ctx, id: number, patch: z.input<typeof I
   const p = IncomePatch.parse(patch);
   // Mudou a data sem informar o mês: o mês acompanha a data
   if (p.date !== undefined && p.month === undefined) p.month = monthOf(p.date);
-  await updateRow(ctx.db, "incomes", id, p, ["description", "amount_cents", "date", "month", "notes"]);
+  await updateRow(ctx, "incomes", id, p, ["description", "amount_cents", "date", "month", "notes"]);
   return getIncome(ctx, id);
 }
 
 export async function deleteIncome(ctx: Ctx, id: number): Promise<Income> {
   const cur = await getIncome(ctx, id);
-  await ctx.db.prepare("DELETE FROM incomes WHERE id = ?").bind(id).run();
+  await ctx.db.prepare("DELETE FROM incomes WHERE id = ? AND user_id = ?").bind(id, ctx.userId).run();
   return cur;
 }

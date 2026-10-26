@@ -1,9 +1,8 @@
 import { Hono } from "hono";
-import { idParam, makeCtx } from "../../lib";
+import { type AppEnv, ctxOf, idParam } from "../../lib";
 import * as agenda from "./service";
 
-export const agendaRoutes = new Hono<{ Bindings: Env }>();
-const ctxOf = (c: { env: Env }) => makeCtx(c.env);
+export const agendaRoutes = new Hono<AppEnv>();
 
 agendaRoutes.get("/events", async (c) => {
   const ctx = ctxOf(c);

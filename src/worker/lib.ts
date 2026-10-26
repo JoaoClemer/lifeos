@@ -1,3 +1,4 @@
+import type { Context } from "hono";
 import { nowIn } from "../shared/datetime";
 import { monthOf } from "../shared/month";
 
@@ -11,8 +12,19 @@ export class UserError extends Error {
   }
 }
 
+/**
+ * Pessoa dona dos dados acessados com a senha do app (APP_PASSWORD), o MCP_TOKEN e os códigos de devedor.
+ * Até a fase 2 (login por pessoa), esses acessos são todos do dono atual.
+ */
+export const OWNER_USER_ID = 1;
+
+/** Variáveis do Hono: quem está usando. Vem só da autenticação, nunca do corpo ou da URL da requisição. */
+export type AppEnv = { Bindings: Env; Variables: { userId: number } };
+
 export interface Ctx {
   db: D1Database;
+  /** Dono dos dados: toda consulta filtra e todo INSERT grava este user_id. */
+  userId: number;
   today: string;
   month: string;
   /** Fuso IANA do app (ex.: America/Sao_Paulo). */
@@ -23,12 +35,17 @@ export interface Ctx {
   source: "app" | "mcp";
 }
 
-export function makeCtx(env: Env, source: Ctx["source"] = "app"): Ctx {
+export function makeCtx(env: Env, userId: number, source: Ctx["source"] = "app"): Ctx {
+  // Sem dono identificado não há consulta: falha fechado
+  if (!Number.isInteger(userId) || userId <= 0) throw new Error("Pessoa não identificada");
   const timezone = env.TIMEZONE || "America/Sao_Paulo";
   const now = nowIn(timezone);
   const today = now.slice(0, 10);
-  return { db: env.DB, today, month: monthOf(today), timezone, now, source };
+  return { db: env.DB, userId, today, month: monthOf(today), timezone, now, source };
 }
+
+/** Ctx de uma requisição autenticada da API. */
+export const ctxOf = (c: Context<AppEnv>): Ctx => makeCtx(c.env, c.get("userId"));
 
 /** Id numérico vindo da URL. */
 export function idParam(v: string): number {
@@ -50,9 +67,9 @@ export function nn<T>(v: T | undefined): T | null {
   return v === undefined ? null : v;
 }
 
-/** UPDATE apenas das colunas presentes em `patch` (e permitidas). */
+/** UPDATE apenas das colunas presentes em `patch` (e permitidas), só em linha da pessoa. */
 export async function updateRow(
-  db: D1Database,
+  ctx: Ctx,
   table: string,
   id: number,
   patch: Record<string, unknown>,
@@ -60,19 +77,21 @@ export async function updateRow(
 ): Promise<void> {
   const keys = allowed.filter((k) => patch[k] !== undefined);
   if (keys.length === 0) return;
-  const sql = `UPDATE ${table} SET ${keys.map((k) => `${k} = ?`).join(", ")} WHERE id = ?`;
+  const sql = `UPDATE ${table} SET ${keys.map((k) => `${k} = ?`).join(", ")} WHERE id = ? AND user_id = ?`;
   const values = keys.map((k) => {
     const v = patch[k];
     return typeof v === "boolean" ? (v ? 1 : 0) : (v as string | number | null);
   });
-  const res = await db.prepare(sql).bind(...values, id).run();
+  const res = await ctx.db.prepare(sql).bind(...values, id, ctx.userId).run();
   if (!res.meta.changes) throw new UserError(`Registro ${id} não encontrado`, 404);
 }
 
-export async function mustGet<T>(db: D1Database, table: string, id: number, label: string): Promise<T> {
-  const row = await db.prepare(`SELECT * FROM ${table} WHERE id = ?`).bind(id).first<T>();
+/** Linha da pessoa pelo id (sem a coluna user_id). De outra pessoa ou inexistente: 404. */
+export async function mustGet<T>(ctx: Ctx, table: string, id: number, label: string): Promise<T> {
+  const row = await ctx.db.prepare(`SELECT * FROM ${table} WHERE id = ? AND user_id = ?`).bind(id, ctx.userId).first<T & { user_id: number }>();
   if (!row) throw new UserError(`${label} ${id} não encontrado(a)`, 404);
-  return row;
+  const { user_id: _owner, ...rest } = row;
+  return rest as T;
 }
 
 export function normalize(s: string): string {
