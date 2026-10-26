@@ -1,42 +1,32 @@
-import { type ErrorHandler, Hono } from "hono";
-import { deleteCookie, getCookie, setCookie } from "hono/cookie";
+import { Hono } from "hono";
+import { deleteCookie, getCookie } from "hono/cookie";
 import { z } from "zod";
 import { api } from "./api";
-import { checkMcpToken, createSession, safeEqual, SESSION_COOKIE, SESSION_MAX_AGE, verifySession } from "./auth";
+import { authApi } from "./authApi";
+import { checkMcpToken, createUserSession, failureDelay, readSession, safeEqual, SESSION_COOKIE, sessionKey, setSessionCookie } from "./auth";
 import { debtorApi } from "./debtorApi";
-import { type AppEnv, ctxOf, OWNER_USER_ID, UserError } from "./lib";
+import { onAppError } from "./errors";
+import { type AppEnv, OWNER_USER_ID } from "./lib";
 import { handleMcpRequest } from "./mcp/server";
+import { loadActiveUser, type SessionUser, userOfMcpToken } from "./modules/users/service";
 
 z.config(z.locales.ptBR());
 
 const app = new Hono<AppEnv>();
-
-/** Erros viram respostas JSON: UserError e validação são 4xx; o resto vira 500 sem detalhes. */
-export const onAppError: ErrorHandler<AppEnv> = (err, c) => {
-  if (err instanceof UserError) return c.json({ error: err.message }, err.status);
-  if (err instanceof z.ZodError) return c.json({ error: z.prettifyError(err) }, 400);
-  if (err instanceof SyntaxError) return c.json({ error: "JSON inválido" }, 400);
-  console.error(err);
-  return c.json({ error: "Erro interno" }, 500);
-};
 app.onError(onAppError);
 
-// ---- Login (senha única do app) ----
+// ---- Senha do app (APP_PASSWORD): acesso do dono (admin), além da passkey ----
 app.post("/api/login", async (c) => {
   const { password } = await c.req.json<{ password?: string }>();
   const expected = c.env.APP_PASSWORD;
-  if (!expected) return c.json({ error: "APP_PASSWORD não configurada no servidor" }, 500);
+  if (!expected) return c.json({ error: "Entrada com senha desativada: use sua passkey" }, 400);
   if (!password || !safeEqual(password, expected)) {
-    await new Promise((r) => setTimeout(r, 800)); // dificulta força bruta
+    await failureDelay();
     return c.json({ error: "Senha incorreta" }, 401);
   }
-  setCookie(c, SESSION_COOKIE, await createSession(expected), {
-    httpOnly: true,
-    secure: new URL(c.req.url).protocol === "https:",
-    sameSite: "Lax",
-    path: "/",
-    maxAge: SESSION_MAX_AGE,
-  });
+  const owner = await loadActiveUser(c.env.DB, OWNER_USER_ID);
+  if (!owner) return c.json({ error: "Conta do dono não encontrada" }, 500);
+  setSessionCookie(c, await createUserSession(sessionKey(c.env)!, owner.id, owner.session_version));
   return c.json({ ok: true });
 });
 
@@ -45,32 +35,42 @@ app.post("/api/logout", (c) => {
   return c.json({ ok: true });
 });
 
+// ---- Passkeys, convites e recuperação: antes da sessão (quem chama ainda não entrou) ----
+app.route("/api/auth", authApi);
+
 // ---- Página dos devedores (/devedor): login próprio por pessoa, fora da sessão do app ----
 app.route("/api/debtor", debtorApi);
 
+// ---- Sessão: diz quem é a pessoa. Conta desativada ou sessões derrubadas (versão mudou) não entram ----
 app.use("/api/*", async (c, next) => {
-  if (!(await verifySession(c.env.APP_PASSWORD, getCookie(c, SESSION_COOKIE)))) return c.json({ error: "Não autenticado" }, 401);
-  // A senha do app é do dono (pessoa 1). A fase 2 traz sessão por pessoa.
-  c.set("userId", OWNER_USER_ID);
+  const claim = await readSession(c.env, getCookie(c, SESSION_COOKIE));
+  const user = claim && (await loadActiveUser(c.env.DB, claim.userId));
+  // Sessão antiga (só senha, do dono) vale até a primeira vez que ele derrubar as sessões
+  const current = user && (claim.version === null ? user.session_version === 0 : claim.version === user.session_version);
+  if (!current) return c.json({ error: "Não autenticado" }, 401);
+  c.set("userId", user.id);
+  c.set("role", user.role);
+  c.set("timezone", user.timezone);
   await next();
-});
-
-// "Hoje" e fuso do servidor: o app usa os mesmos do MCP, independentemente do fuso do aparelho
-app.get("/api/me", (c) => {
-  const { today, timezone } = ctxOf(c);
-  return c.json({ ok: true, today, timezone });
 });
 app.route("/api", api);
 
 // ---- MCP: /mcp/<token> (conector do claude.ai) ou /mcp com "Authorization: Bearer <token>" ----
+// Token da pessoa (mcp_tokens) ou, do dono, o MCP_TOKEN
+async function mcpUser(env: Env, token: string | undefined): Promise<SessionUser | null> {
+  if (!token) return null;
+  if (checkMcpToken(env.MCP_TOKEN, token)) return loadActiveUser(env.DB, OWNER_USER_ID);
+  return userOfMcpToken(env.DB, token);
+}
 app.all("/mcp/:token", async (c) => {
-  if (!checkMcpToken(c.env.MCP_TOKEN, c.req.param("token"))) return c.json({ error: "unauthorized" }, 401);
-  return handleMcpRequest(c.req.raw, c.env, OWNER_USER_ID);
+  const user = await mcpUser(c.env, c.req.param("token"));
+  if (!user) return c.json({ error: "unauthorized" }, 401);
+  return handleMcpRequest(c.req.raw, c.env, user.id, user.timezone);
 });
 app.all("/mcp", async (c) => {
-  const bearer = c.req.header("Authorization")?.replace(/^Bearer\s+/i, "");
-  if (!checkMcpToken(c.env.MCP_TOKEN, bearer)) return c.json({ error: "unauthorized" }, 401);
-  return handleMcpRequest(c.req.raw, c.env, OWNER_USER_ID);
+  const user = await mcpUser(c.env, c.req.header("Authorization")?.replace(/^Bearer\s+/i, ""));
+  if (!user) return c.json({ error: "unauthorized" }, 401);
+  return handleMcpRequest(c.req.raw, c.env, user.id, user.timezone);
 });
 
 // Sem OAuth: descoberta retorna 404 para o cliente seguir sem autenticação (o token já vai na URL)

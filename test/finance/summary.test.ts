@@ -109,8 +109,9 @@ describe("backup", () => {
       `SELECT name FROM sqlite_master WHERE type = 'table'
        AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name <> 'd1_migrations'`,
     ).all<{ name: string }>();
-    // Sem dono: pessoas e as tabelas antigas de configurações e saldos (paradas desde a 0010, só para rollback)
-    const notOwned = ["users", "settings", "month_balances"];
+    // Sem dono: pessoas e login (passkeys, convites, desafios, conectores) e as tabelas antigas de configurações
+    // e saldos (paradas desde a 0010, só para rollback)
+    const notOwned = ["users", "passkeys", "invites", "auth_challenges", "mcp_tokens", "settings", "month_balances"];
     expect(results.map((r) => r.name).sort()).toEqual([...OWNED_TABLES, ...notOwned].sort());
     expect(Object.keys(backup.tables).sort()).toEqual([...OWNED_TABLES].sort());
     expect(backup.tables.expenses).toHaveLength(9);

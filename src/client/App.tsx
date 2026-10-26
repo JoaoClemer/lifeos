@@ -1,7 +1,10 @@
-import { ChartNoAxesColumnIncreasing, ChevronLeft, ChevronRight, Ellipsis, Plus, Settings, Undo2 } from "lucide-react";
+import { ChartNoAxesColumnIncreasing, ChevronLeft, ChevronRight, Ellipsis, KeyRound, Plus, Settings, Undo2 } from "lucide-react";
 import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from "react";
 import { addMonths, monthLabel, monthTitle } from "../shared/month";
+import type { Me } from "../shared/users";
 import { api, setUnauthorizedHandler } from "./api";
+import { InviteScreen } from "./auth/InviteScreen";
+import { loginWithPasskey, passkeyError, supportsPasskeys } from "./auth/passkeys";
 import { AgendaView } from "./modules/agenda/AgendaView";
 import { TasksView } from "./modules/tasks/TasksView";
 import { TrainingView } from "./modules/training/TrainingView";
@@ -9,7 +12,7 @@ import { TodayView } from "./modules/today/TodayView";
 import { MOBILE_TABS, NAV, NAV_SECTIONS } from "./nav";
 import { SheetHost } from "./SheetHost";
 import { AppProvider, clearCache, type NewTab, useApp } from "./state";
-import { Button, cx, ErrorBoundary, TextInput } from "./ui";
+import { Button, cx, ErrorBoundary, LinkButton, TextInput } from "./ui";
 import { ExpensesView } from "./views/ExpensesView";
 import { GoalsView } from "./views/GoalsView";
 import { ReceivablesView } from "./views/ReceivablesView";
@@ -18,15 +21,21 @@ import { SummaryView } from "./views/SummaryView";
 
 type Auth = "checking" | "in" | "out";
 
+/** Token de um link de convite ou de recuperação (#/convite/<token>). */
+const inviteToken = () => /^#\/convite\/([\w-]+)/.exec(location.hash)?.[1] ?? null;
+
 export default function App() {
   const [auth, setAuth] = useState<Auth>("checking");
-  // Fuso do servidor: "hoje" no app é o mesmo do MCP, mesmo com o aparelho em outro fuso
+  const [me, setMe] = useState<Me | null>(null);
+  const [invite, setInvite] = useState(inviteToken);
+  // Fuso da pessoa: "hoje" no app é o mesmo do MCP, mesmo com o aparelho em outro fuso
   const [timezone, setTimezone] = useState("America/Sao_Paulo");
   const checkSession = useCallback(() => {
     api
-      .get<{ timezone: string }>("/api/me")
-      .then((me) => {
-        setTimezone(me.timezone);
+      .get<{ user: Me; timezone: string }>("/api/me")
+      .then((r) => {
+        setMe(r.user);
+        setTimezone(r.timezone);
         setAuth("in");
       })
       .catch(() => setAuth("out"));
@@ -36,10 +45,24 @@ export default function App() {
     checkSession();
   }, [checkSession]);
 
+  // Link de convite ou de recuperação: cadastra a passkey e entra (troca a sessão atual, se houver)
+  if (invite) {
+    return (
+      <InviteScreen
+        token={invite}
+        onDone={() => {
+          history.replaceState(null, "", "/");
+          setInvite(null);
+          clearCache();
+          checkSession();
+        }}
+      />
+    );
+  }
   if (auth === "checking") return <div className="min-h-dvh bg-bg" />;
-  if (auth === "out") return <Login onLogin={checkSession} />;
+  if (auth === "out" || !me) return <Login onLogin={checkSession} />;
   return (
-    <AppProvider timezone={timezone}>
+    <AppProvider timezone={timezone} me={me} reloadMe={checkSession}>
       <Shell
         onLogout={() => {
           clearCache();
@@ -247,9 +270,23 @@ function MonthSwitcher() {
 }
 
 function Login({ onLogin }: { onLogin: () => void }) {
+  const [withPassword, setWithPassword] = useState(false);
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  async function passkey() {
+    setBusy(true);
+    setError(null);
+    try {
+      await loginWithPasskey();
+      onLogin();
+    } catch (err) {
+      setError(passkeyError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -273,21 +310,48 @@ function Login({ onLogin }: { onLogin: () => void }) {
             <ChartNoAxesColumnIncreasing size={28} strokeWidth={2.5} />
           </span>
           <h1 className="text-2xl font-bold tracking-tight">LifeOS</h1>
-          <p className="text-sm text-muted">Digite sua senha para entrar.</p>
+          <p className="text-sm text-muted">
+            {withPassword ? "Digite a senha de administrador." : "Entre com a passkey deste aparelho (Face ID, digital ou PIN)."}
+          </p>
         </div>
-        <TextInput
-          type="password"
-          autoComplete="current-password"
-          placeholder="Senha"
-          aria-label="Senha"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          autoFocus
-        />
-        {error && <p className="text-center text-sm font-medium text-danger">{error}</p>}
-        <Button type="submit" className="w-full" disabled={busy || !password}>
-          {busy ? "Entrando…" : "Entrar"}
-        </Button>
+        {withPassword ? (
+          <>
+            <TextInput
+              type="password"
+              autoComplete="current-password"
+              placeholder="Senha"
+              aria-label="Senha"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoFocus
+            />
+            {error && <p className="text-center text-sm font-medium text-danger">{error}</p>}
+            <Button type="submit" className="w-full" disabled={busy || !password}>
+              {busy ? "Entrando…" : "Entrar"}
+            </Button>
+          </>
+        ) : (
+          <>
+            {!supportsPasskeys() && (
+              <p className="rounded-xl bg-warn-soft p-3 text-sm text-warn">Este navegador não suporta passkeys. Use o Safari (iPhone) ou o Chrome.</p>
+            )}
+            {error && <p className="text-center text-sm font-medium text-danger">{error}</p>}
+            <Button type="button" className="w-full" disabled={busy} onClick={passkey}>
+              <KeyRound size={18} /> {busy ? "Aguardando o aparelho…" : "Entrar com passkey"}
+            </Button>
+            <p className="text-center text-xs text-muted">Ainda não tem acesso? Peça um convite para quem administra o LifeOS.</p>
+          </>
+        )}
+        <div className="text-center">
+          <LinkButton
+            onClick={() => {
+              setWithPassword(!withPassword);
+              setError(null);
+            }}
+          >
+            {withPassword ? "Entrar com passkey" : "Entrar com a senha de administrador"}
+          </LinkButton>
+        </div>
       </form>
     </div>
   );

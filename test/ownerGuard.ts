@@ -2,25 +2,9 @@
 // Toda consulta feita pelo código do Worker que cita uma tabela com dono precisa mencionar user_id
 // ao menos uma vez por tabela citada (subconsultas inclusive). SQL escrito nos próprios testes fica de fora.
 
-/** Tabelas em que cada linha é de uma pessoa. */
-export const OWNED_TABLES = [
-  "accounts",
-  "recurring",
-  "recurring_months",
-  "installments",
-  "expenses",
-  "receivables",
-  "incomes",
-  "goals",
-  "goal_entries",
-  "projects",
-  "tasks",
-  "events",
-  "activity_log",
-  "training_sessions",
-  "user_settings",
-  "user_month_balances",
-] as const;
+import { OWNED_TABLES } from "../src/worker/owned";
+
+export { OWNED_TABLES };
 
 const OWNED = new Set<string>(OWNED_TABLES);
 

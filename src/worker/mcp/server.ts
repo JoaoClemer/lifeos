@@ -65,11 +65,11 @@ function listTools() {
 const result = (id: JsonRpcId, result: unknown) => ({ jsonrpc: "2.0", id, result });
 const error = (id: JsonRpcId, code: number, message: string) => ({ jsonrpc: "2.0", id, error: { code, message } });
 
-async function callTool(params: Record<string, unknown> | undefined, env: Env, userId: number) {
+async function callTool(params: Record<string, unknown> | undefined, env: Env, userId: number, timezone: string | null) {
   const name = params?.name as string;
   const tool = TOOLS.find((t) => t.name === name);
   if (!tool) return { content: [{ type: "text", text: `Ferramenta desconhecida: ${name}` }], isError: true };
-  const ctx = makeCtx(env, userId, "mcp");
+  const ctx = makeCtx(env, userId, "mcp", timezone);
   try {
     const args = tool.schema.parse(params?.arguments ?? {});
     const text = await tool.run(args, ctx);
@@ -88,7 +88,7 @@ async function callTool(params: Record<string, unknown> | undefined, env: Env, u
   }
 }
 
-async function handleMessage(msg: JsonRpcMessage, env: Env, userId: number) {
+async function handleMessage(msg: JsonRpcMessage, env: Env, userId: number, timezone: string | null) {
   if (!msg || typeof msg !== "object" || msg.jsonrpc !== "2.0") return error(null, -32600, "Invalid Request");
   // Notificações (sem id) e respostas do cliente não têm resposta
   if (msg.id === undefined || !msg.method) return null;
@@ -109,7 +109,7 @@ async function handleMessage(msg: JsonRpcMessage, env: Env, userId: number) {
     case "tools/list":
       return result(id, { tools: listTools() });
     case "tools/call":
-      return result(id, await callTool(msg.params, env, userId));
+      return result(id, await callTool(msg.params, env, userId, timezone));
     case "resources/list":
       return result(id, { resources: [] });
     case "resources/templates/list":
@@ -122,7 +122,7 @@ async function handleMessage(msg: JsonRpcMessage, env: Env, userId: number) {
 }
 
 /** Atende o MCP de uma pessoa já autenticada (pelo token): as ferramentas só enxergam os dados dela. */
-export async function handleMcpRequest(req: Request, env: Env, userId: number): Promise<Response> {
+export async function handleMcpRequest(req: Request, env: Env, userId: number, timezone: string | null = null): Promise<Response> {
   if (req.method === "GET" || req.method === "DELETE") {
     // Sem stream SSE nem sessões: o cliente deve usar só POST
     return new Response("Method Not Allowed", { status: 405, headers: { Allow: "POST" } });
@@ -136,7 +136,7 @@ export async function handleMcpRequest(req: Request, env: Env, userId: number): 
     return Response.json(error(null, -32700, "Parse error"), { status: 400 });
   }
   const messages = (Array.isArray(body) ? body : [body]) as JsonRpcMessage[];
-  const responses = (await Promise.all(messages.map((m) => handleMessage(m, env, userId)))).filter((r) => r !== null);
+  const responses = (await Promise.all(messages.map((m) => handleMessage(m, env, userId, timezone)))).filter((r) => r !== null);
   if (responses.length === 0) return new Response(null, { status: 202 });
   return Response.json(Array.isArray(body) ? responses : responses[0]);
 }

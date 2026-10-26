@@ -15,6 +15,7 @@ import * as installments from "./services/installments";
 import * as receivables from "./services/receivables";
 import * as recurring from "./services/recurring";
 import * as summary from "./services/summary";
+import { usersRoutes } from "./modules/users/routes";
 
 export const api = new Hono<AppEnv>();
 
@@ -36,9 +37,10 @@ api.get("/export", async (c) => {
   c.header("Content-Disposition", `attachment; filename="financas-backup-${ctx.today}.json"`);
   return c.json(await summary.exportAll(ctx));
 });
+// Link do conector antigo (MCP_TOKEN), só do dono. Cada pessoa cria os próprios em /api/me/mcp-tokens.
 api.get("/mcp-info", (c) => {
   const origin = new URL(c.req.url).origin;
-  const token = c.env.MCP_TOKEN;
+  const token = ctxOf(c).userId === OWNER_USER_ID ? c.env.MCP_TOKEN : undefined;
   return c.json({ configured: !!token && token.length >= 16, url: token ? `${origin}/mcp/${token}` : null });
 });
 
@@ -173,3 +175,4 @@ api.route("/", tasksRoutes);
 api.route("/", agendaRoutes);
 api.route("/", trainingRoutes);
 api.route("/", todayRoutes);
+api.route("/", usersRoutes);

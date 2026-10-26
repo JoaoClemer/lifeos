@@ -1,5 +1,6 @@
 # Copie para .dev.vars para rodar localmente. Em produção use: npx wrangler secret put <NOME>
 APP_PASSWORD=troque-esta-senha
+SESSION_SECRET=gere-com-openssl-rand-hex-32
 MCP_TOKEN=gere-com-openssl-rand-hex-32
 # Opcional: código de acesso de um devedor à página /devedor (DEBTOR_CODE_<NOME>, 6+ caracteres)
 DEBTOR_CODE_FULANO=troque-este-codigo

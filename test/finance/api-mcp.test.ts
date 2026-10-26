@@ -28,7 +28,11 @@ describe("API", () => {
     expect(login.status).toBe(200);
     const cookie = login.headers.get("Set-Cookie")!.split(";")[0];
     const me = await app.request("/api/me", { headers: { Cookie: cookie } }, env);
-    expect(await me.json()).toMatchObject({ ok: true, timezone: "America/Sao_Paulo", today: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) });
+    expect(await me.json()).toMatchObject({
+      user: { id: 1, role: "admin" },
+      timezone: "America/Sao_Paulo",
+      today: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+    });
     const summary = await app.request("/api/summary?month=2026-10", { headers: { Cookie: cookie } }, env);
     expect(((await summary.json()) as { totals: { total_cents: number } }).totals.total_cents).toBe(265432);
   });
