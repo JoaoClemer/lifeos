@@ -452,3 +452,23 @@ Resultado: os 73 arquivos ficaram idênticos nos três snapshots. A página `/de
   - MCP.
 - 219 testes passando.
 
+### Ensaio de release das fases 2 a 6 (26/10/2026)
+
+**Passos, com uma cópia da produção exportada no dia (até a 0010):**
+
+1. Snapshot da API e do MCP com o código no ar (`main`).
+2. Migrações 0011 a 0015 aplicadas na cópia.
+3. Snapshot com o código no ar sobre o banco migrado: **idêntico**, então o rollback é seguro.
+4. Snapshot com o código da fase 6. O resultado:
+   - **textos do MCP** (resumos, listas, agenda etc.): idênticos; só a lista de ferramentas ganhou as ferramentas e os parâmetros novos;
+   - **JSON da API:** a diferença são só os campos novos, todos vazios ou zerados para o dono (`owner`, `members`, `debtor_user_id`, `paid_claimed_at`, `disputed_at`, `dispute_note`, `payables_month_cents`, `payable_pending_cents`, `owed_by_person`).
+
+**Deploy**, depois do merge dos PRs #12 a #16, em ordem:
+
+1. `npx wrangler secret put SESSION_SECRET` (valor de `openssl rand -hex 32`).
+2. Exportar o banco de produção.
+3. `npm run db:migrate:remote` (0011 a 0015).
+4. `npm run deploy`.
+5. Comparar o `resumo_mes`.
+6. O dono cadastra a passkey em Ajustes e convida a primeira pessoa.
+
