@@ -4,7 +4,7 @@ import { formatBRL, parseMoney, toCents } from "../../src/shared/money";
 import { addMonths, monthDiff, referenceMonth, type CardCycle } from "../../src/shared/month";
 import { isDue } from "../../src/shared/receivables";
 import { splitAmounts } from "../../src/worker/mcp/tools";
-import { decorateGoal, type GoalRow } from "../../src/worker/services/goals";
+import { decorateGoal, type GoalCalc } from "../../src/worker/services/goals";
 
 const credit = (closing_day: number | null, due_day: number | null, payment_day: number | null = null): CardCycle => ({
   type: "credit",
@@ -122,7 +122,7 @@ describe("isDue (parcelas de devedor parcelado)", () => {
 });
 
 describe("decorateGoal (metas)", () => {
-  const base: GoalRow = {
+  const base: GoalCalc & Record<string, unknown> = {
     id: 1,
     name: "Meta",
     institution: null,

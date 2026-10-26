@@ -4,7 +4,7 @@ import { z } from "zod";
 import { addMonths, MONTH_RE } from "../../shared/month";
 import type { MonthBalance } from "../../shared/types";
 import { type Ctx, UserError } from "../lib";
-import { decorateGoal, type GoalRow } from "./goals";
+import { decorateGoal, type GoalCalc } from "./goals";
 
 export const OpeningInput = z.object({
   opening_cents: z.number().int(),
@@ -18,7 +18,8 @@ interface Bulk {
   overrides: Map<string, number>; // `${recurring_id}|${month}` -> valor ajustado no mês
   expenseSums: Map<string, number>; // `${month}|${budget_id ?? ""}` -> soma
   incomes: Map<string, number>; // month -> entradas extras
-  goals: Omit<GoalRow, "month_contrib_cents">[];
+  goals: (Omit<GoalCalc, "month_contrib_cents"> & { id: number; member_count: number; team_monthly_cents: number })[];
+  teamContrib: Map<string, number>; // metas em conjunto: aportes de todos, `${goal_id}|${month}`
   goalContrib: Map<string, number>; // `${goal_id}|${month}` -> aportes - resgates
   payables: Map<string, number>; // month -> "devo a pessoas" (sua parte em gastos de pessoas conectadas)
   salary: number | null;
@@ -34,13 +35,19 @@ async function loadBulk(ctx: Ctx): Promise<Bulk> {
     "SELECT recurring_id, month, amount_cents FROM recurring_months WHERE user_id = ?1 AND amount_cents IS NOT NULL",
     "SELECT month, budget_id, SUM(amount_cents) AS total FROM expenses WHERE user_id = ?1 GROUP BY month, budget_id",
     "SELECT month, SUM(amount_cents) AS total FROM incomes WHERE user_id = ?1 GROUP BY month",
-    `SELECT g.id, g.name, g.institution, g.target_cents, g.monthly_cents, g.deadline, g.start_month, g.color, g.archived,
-       COALESCE((SELECT SUM(amount_cents) FROM goal_entries WHERE goal_id = g.id AND user_id = g.user_id), 0) AS balance_cents
-     FROM goals g WHERE g.user_id = ?1 AND g.archived = 0`,
+    `SELECT g.id, g.target_cents, CASE WHEN g.user_id = ?1 THEN g.monthly_cents ELSE gm.monthly_cents END AS monthly_cents,
+       g.deadline, g.start_month, g.archived,
+       (SELECT COUNT(*) FROM goal_members m WHERE m.goal_id = g.id AND m.user_id <> g.user_id) AS member_count,
+       COALESCE(g.monthly_cents, 0) + COALESCE((SELECT SUM(m.monthly_cents) FROM goal_members m WHERE m.goal_id = g.id AND m.user_id <> g.user_id), 0) AS team_monthly_cents,
+       COALESCE((SELECT SUM(e.amount_cents) FROM goal_entries e WHERE e.goal_id = g.id), 0) AS balance_cents
+     FROM goals g LEFT JOIN goal_members gm ON gm.goal_id = g.id AND gm.user_id = ?1 WHERE (g.user_id = ?1 OR gm.user_id = ?1) AND g.archived = 0`,
     "SELECT goal_id, month, SUM(amount_cents) AS total FROM goal_entries WHERE user_id = ?1 AND kind IN ('contribution', 'withdrawal') GROUP BY goal_id, month",
     "SELECT key, value FROM user_settings WHERE user_id = ?1 AND key IN ('income_cents', 'balance_start_month')",
     "SELECT month, opening_cents, note FROM user_month_balances WHERE user_id = ?1",
     "SELECT month, SUM(amount_cents) AS total FROM receivables WHERE debtor_user_id = ?1 GROUP BY month",
+    `SELECT e.goal_id, e.month, SUM(e.amount_cents) AS total FROM goal_entries e JOIN goals g ON g.id = e.goal_id
+       LEFT JOIN goal_members gm ON gm.goal_id = g.id AND gm.user_id = ?1
+     WHERE (g.user_id = ?1 OR gm.user_id = ?1) AND e.kind IN ('contribution', 'withdrawal') GROUP BY e.goal_id, e.month`,
   ];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const r = (await ctx.db.batch(sql.map((s) => ctx.db.prepare(s).bind(ctx.userId)))).map((x) => x.results as any[]);
@@ -57,6 +64,7 @@ async function loadBulk(ctx: Ctx): Promise<Bulk> {
     startSetting: settings.balance_start_month || null,
     manual: new Map(r[8].map((m) => [m.month, { opening_cents: m.opening_cents, note: m.note }])),
     payables: new Map(r[9].map((p) => [p.month, p.total])),
+    teamContrib: new Map(r[10].map((c) => [`${c.goal_id}|${c.month}`, c.total])),
   };
 }
 
@@ -81,7 +89,10 @@ function leftoverOf(b: Bulk, m: string): number {
   let done = 0;
   for (const g of b.goals) {
     const contrib = b.goalContrib.get(`${g.id}|${m}`) ?? 0;
-    planned += decorateGoal({ ...g, month_contrib_cents: contrib }, m).month_planned_cents;
+    // Mesma regra do resumo: seu aporte planejado; numa meta só sua, o grupo é você
+    const team = g.member_count ? (b.teamContrib.get(`${g.id}|${m}`) ?? 0) : contrib;
+    const teamMonthly = g.member_count ? g.team_monthly_cents : g.monthly_cents;
+    planned += decorateGoal({ ...g, month_contrib_cents: contrib, team_monthly_cents: teamMonthly, team_month_contrib_cents: team }, m).month_planned_cents;
     done += Math.max(contrib, 0);
   }
   return income - total - Math.max(planned, done);

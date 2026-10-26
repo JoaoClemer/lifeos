@@ -22,6 +22,7 @@ export const OWNED_TABLES = [
   "person_links",
   "event_participants",
   "project_members",
+  "goal_members",
 ] as const;
 
 export type OwnedTable = (typeof OWNED_TABLES)[number];

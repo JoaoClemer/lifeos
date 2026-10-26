@@ -111,6 +111,21 @@ export interface GoalEntry {
   month: string;
   date: string;
   note: string | null;
+  /** Em meta em conjunto: quem fez, quando não foi você. */
+  author: string | null;
+  /** Você pode excluir (a movimentação é sua). */
+  mine: boolean;
+}
+
+/** Pessoa numa meta em conjunto. */
+export interface GoalMember {
+  id: number;
+  name: string | null;
+  role: "owner" | "member";
+  /** Aporte mensal planejado desta pessoa. */
+  monthly_cents: number | null;
+  /** Aportes líquidos desta pessoa no mês consultado. */
+  month_contrib_cents: number;
 }
 
 export interface Goal {
@@ -123,15 +138,20 @@ export interface Goal {
   start_month: string;
   color: string | null;
   archived: number;
+  /** Saldo da meta (em conjunto: de todos). */
   balance_cents: number;
-  /** Aportes líquidos (aportes - resgates) no mês consultado. */
+  /** Seus aportes líquidos (aportes - resgates) no mês consultado. */
   month_contrib_cents: number;
   /** Aporte planejado no mês consultado (0 se não houver ou se a meta já foi atingida). */
   month_planned_cents: number;
   /** Mês estimado para atingir a meta no ritmo do aporte mensal. */
   eta_month: string | null;
-  /** Aporte mensal necessário para bater a meta até o prazo. */
+  /** Aporte mensal necessário para bater a meta até o prazo (em conjunto: somando todos). */
   required_monthly_cents: number | null;
+  /** Dono(a) da meta, quando não é você (você participa). */
+  owner: { id: number; name: string | null } | null;
+  /** Meta em conjunto: todos que participam (inclusive o dono). Vazio se a meta é só sua. */
+  members: GoalMember[];
 }
 
 export interface Settings {
