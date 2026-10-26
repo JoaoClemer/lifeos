@@ -420,3 +420,35 @@ Resultado: os 73 arquivos ficaram idênticos nos três snapshots. A página `/de
 - Os testes antigos de tarefas passaram sem mudança.
 - 213 testes passando.
 
+### Fase 6: metas em conjunto (26/10/2026)
+
+**O que mudou:**
+
+- **Migração `0015_joint_goals.sql`:** `goal_members`, com o aporte mensal de cada pessoa. Entra em `OWNED_TABLES`.
+- **Quem vê a meta:** o dono e os membros.
+  - `monthly_cents` é o seu aporte (o do dono fica em `goals`; o dos membros, em `goal_members`).
+  - `balance_cents` soma as movimentações de todos; `month_contrib_cents` são só os seus aportes.
+  - `members` lista cada pessoa, com o aporte planejado e o aporte do mês.
+- **`decorateGoal`** recebe os valores do grupo (aporte planejado e aportes do mês de todos) para a previsão e para "quanto ainda faltava no início do mês".
+  - O aporte planejado continua sendo o seu.
+  - Numa meta só sua, o grupo é você, e os números ficam idênticos aos de antes.
+  - `balance.ts` usa a mesma regra; o teste de concordância entre resumo e saldo acumulado roda para quem criou e para quem participa.
+- **Permissões:** só quem criou altera, exclui e define os membros (só pessoas conectadas). Quem participa ajusta o próprio aporte (`/my-plan`) e pode sair. Cada um exclui só as próprias movimentações.
+- **Desconectar** tira a pessoa das metas um do outro. Excluir a conta apaga as movimentações da pessoa, inclusive em metas de outras.
+- **MCP:** `listar_metas` mostra "em conjunto" (só nas metas compartilhadas, então as saídas atuais não mudam). Ferramenta nova `compartilhar_meta`.
+- **Telas:**
+  - "Em conjunto com" no formulário da meta;
+  - no detalhe: quem participa, o seu aporte, Sair, e o autor de cada movimentação;
+  - no card: "meta de …" ou "com …".
+
+**Testes:**
+
+- `test/modules/joint-goals.test.ts` (6 casos):
+  - saldo de todos, aporte de cada um e previsão com o ritmo somado;
+  - resumo e saldo acumulado batendo para quem criou e para quem participa;
+  - permissões e só pessoas conectadas;
+  - sair e desconectar;
+  - metas antigas iguais;
+  - MCP.
+- 219 testes passando.
+

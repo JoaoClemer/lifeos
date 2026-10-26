@@ -144,6 +144,9 @@ const MUTATIONS: Record<string, { body?: unknown; status: number }> = {
   "POST /goals/:id/balance": { body: { balance_cents: 100 }, status: 404 },
   "POST /goals/:id/check": { body: { month: MONTH }, status: 404 },
   "DELETE /goal-entries/:id": { status: 404 },
+  "PUT /goals/:id/members": { body: { user_ids: [2] }, status: 404 },
+  "POST /goals/:id/leave": { status: 404 },
+  "PUT /goals/:id/my-plan": { body: { monthly_cents: 100 }, status: 404 },
   "POST /tasks": { body: { title: "x", project_id: 1 }, status: 404 },
   "PATCH /tasks/:id": { body: { title: "x" }, status: 404 },
   "DELETE /tasks/:id": { status: 404 },
@@ -293,6 +296,7 @@ describe("isolamento entre pessoas", () => {
       ["marcar_paguei", { pessoa: "Ana" }],
       ["contestar_divida", { id: 1, motivo: "não é meu" }],
       ["ligar_devedor", { pessoa: "Ana", conta: "Ana" }],
+      ["compartilhar_meta", { meta: "Reserva", adicionar: ["Ana"] }],
     ];
     const called = new Set(calls.map(([name]) => name));
     const listRes = await handleMcpRequest(

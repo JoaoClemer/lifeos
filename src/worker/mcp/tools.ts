@@ -670,6 +670,10 @@ export const TOOLS: Tool[] = [
             );
           if (g.eta_month) parts.push(`— previsão: ${monthLabel(g.eta_month)}`);
           if (g.required_monthly_cents) parts.push(`— para o prazo (${monthLabel(g.deadline!)}) precisa de ${brl(g.required_monthly_cents)}/mês`);
+          if (g.members.length) {
+            const others = g.members.filter((p) => p.id !== ctx.userId).map((p) => p.name ?? "pessoa");
+            parts.push(`— em conjunto${g.owner ? ` (meta de ${g.owner.name ?? "pessoa conectada"})` : ""} com ${others.join(", ")}`);
+          }
           return parts.join(" ");
         }),
       ].join("\n");

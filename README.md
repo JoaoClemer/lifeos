@@ -99,6 +99,13 @@ O LifeOS pode ser usado por pessoas convidadas (amigos, família), cada uma com 
 - **Desconectar** duas pessoas tira cada uma das listas, eventos e tarefas designadas da outra.
 - **Pelo Claude:** `criar_tarefa` e `editar_tarefa` com `atribuir_a`, e `compartilhar_projeto` (adicionar, remover ou sair).
 
+**Metas em conjunto.** Na meta, use **Em conjunto com** para juntar dinheiro com pessoas conectadas (ex.: viagem de casal).
+
+- **Saldo e aportes:** o saldo é de todos. Cada pessoa define o próprio aporte mensal, e cada movimentação mostra quem fez.
+- **No resumo de cada um:** entram só os aportes da própria pessoa. A previsão de quando a meta será atingida usa o ritmo de todos.
+- **Quem altera:** só quem criou edita, exclui e escolhe quem participa. Quem participa pode sair, e os aportes que fez continuam no saldo.
+- **Pelo Claude:** `compartilhar_meta` (adicionar, remover, `meu_aporte_mensal` ou sair). `listar_metas` mostra "em conjunto com …".
+
 ### Página dos devedores
 
 Quem te deve pode acompanhar os próprios valores em `https://financas.<seu-subdominio>.workers.dev/devedor`: a pessoa escolhe o nome, digita o código dela e vê o que está em aberto, as próximas parcelas e o que já pagou. Ela não vê cartões, outras pessoas nem nada do resto do app.

@@ -61,6 +61,7 @@ describe("catálogo", () => {
       "marcar_paguei",
       "contestar_divida",
       "ligar_devedor",
+      "compartilhar_meta",
     ];
     expect(tools.map((t) => t.name).slice(19)).toEqual(lifeos);
     for (const n of ["revisao_diaria", "revisao_semanal", "agenda", "listar_tarefas", "treinos_semana", "listar_minhas_dividas"])

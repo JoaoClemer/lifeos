@@ -82,7 +82,7 @@ export async function acceptConnectionLink(ctx: Ctx, input: unknown): Promise<Co
 
 /**
  * Desfaz a conexão. O que estava compartilhado entre as duas pessoas deixa de estar:
- * nomes ligados (as dívidas continuam com quem tem a receber), convites de eventos, participação nas listas
+ * nomes ligados (as dívidas continuam com quem tem a receber), convites de eventos, participação nas listas e metas
  * e tarefas designadas de uma para a outra.
  */
 export async function removeConnection(ctx: Ctx, otherId: number): Promise<void> {
@@ -109,6 +109,12 @@ export async function removeConnection(ctx: Ctx, otherId: number): Promise<void>
       .bind(ctx.userId, otherId),
     ctx.db
       .prepare("UPDATE tasks SET assignee_user_id = NULL WHERE (user_id = ?1 AND assignee_user_id = ?2) OR (user_id = ?2 AND assignee_user_id = ?1)")
+      .bind(ctx.userId, otherId),
+    ctx.db
+      .prepare(
+        `DELETE FROM goal_members WHERE (user_id = ?2 AND goal_id IN (SELECT id FROM goals WHERE user_id = ?1))
+           OR (user_id = ?1 AND goal_id IN (SELECT id FROM goals WHERE user_id = ?2))`,
+      )
       .bind(ctx.userId, otherId),
   ]);
 }
