@@ -3,6 +3,7 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { z } from "zod";
 import { api } from "./api";
 import { checkMcpToken, createSession, safeEqual, SESSION_COOKIE, SESSION_MAX_AGE, verifySession } from "./auth";
+import { debtorApi } from "./debtorApi";
 import { makeCtx, UserError } from "./lib";
 import { handleMcpRequest } from "./mcp/server";
 
@@ -41,6 +42,9 @@ app.post("/api/logout", (c) => {
   deleteCookie(c, SESSION_COOKIE, { path: "/" });
   return c.json({ ok: true });
 });
+
+// ---- Página dos devedores (/devedor): login próprio por pessoa, fora da sessão do app ----
+app.route("/api/debtor", debtorApi);
 
 app.use("/api/*", async (c, next) => {
   if (!(await verifySession(c.env.APP_PASSWORD, getCookie(c, SESSION_COOKIE)))) return c.json({ error: "Não autenticado" }, 401);

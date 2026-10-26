@@ -1,15 +1,14 @@
-import { ChevronDown, HandCoins, Plus } from "lucide-react";
+import { ChevronDown, HandCoins, Plus, Share2 } from "lucide-react";
 import { useState } from "react";
 import { formatBRL } from "../../shared/money";
 import { formatDateBR, monthLabel } from "../../shared/month";
-import { isDue } from "../../shared/receivables";
+import { isDue, personKey } from "../../shared/receivables";
 import type { Receivable } from "../../shared/types";
 import { api } from "../api";
 import { useAccounts } from "../forms/common";
 import { useApp, useData, useMutation } from "../state";
-import { Badge, Button, Card, CheckCircle, cx, Empty, Money, Row, Segmented } from "../ui";
+import { Avatar, Badge, Button, Card, CheckCircle, cx, Empty, Money, Row, Segmented } from "../ui";
 import { ListSkeleton } from "./ExpensesView";
-import { Avatar } from "./SummaryView";
 
 const norm = (s: string) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim();
 const sum = (items: Receivable[]) => items.reduce((s, r) => s + r.amount_cents, 0);
@@ -24,8 +23,10 @@ interface PersonGroup {
 
 export function ReceivablesView() {
   const [tab, setTab] = useState<"pending" | "received">("pending");
-  const { openSheet, currentMonth } = useApp();
+  const { openSheet, currentMonth, toast } = useApp();
   const list = useData<Receivable[]>(`/api/receivables?status=${tab}`).data;
+  // Quem tem código (DEBTOR_CODE_<NOME>) pode acompanhar os próprios valores em /devedor
+  const withAccess = new Set((useData<string[]>("/api/receivables/access").data ?? []).map(personKey));
   const accounts = new Map(useAccounts().map((a) => [a.id, a.name]));
   const { run } = useMutation();
 
@@ -120,7 +121,20 @@ export function ReceivablesView() {
               <div className="flex items-center gap-3 border-b border-border px-4 py-3">
                 <Avatar name={g.person} />
                 <div className="min-w-0 flex-1">
-                  <p className="font-semibold">{g.person}</p>
+                  <p className="flex items-center gap-1 font-semibold">
+                    {g.person}
+                    {withAccess.has(personKey(g.person)) && (
+                      <button
+                        type="button"
+                        aria-label={`Enviar a ${g.person} o link para acompanhar os valores`}
+                        title="Enviar link da página do devedor"
+                        className="rounded-full p-1 text-muted transition hover:bg-surface-2 hover:text-accent"
+                        onClick={() => shareDebtorLink(toast)}
+                      >
+                        <Share2 size={15} />
+                      </button>
+                    )}
+                  </p>
                   <p className="text-sm text-muted">
                     {g.items.length ? `${g.items.length} ${g.items.length === 1 ? "item" : "itens"}` : "nada vencido"}
                   </p>
@@ -153,6 +167,22 @@ export function ReceivablesView() {
       )}
     </div>
   );
+}
+
+/** Compartilha (ou copia) o link de /devedor. O código não vai junto: cada pessoa recebe o dela à parte. */
+async function shareDebtorLink(toast: (text: string) => void) {
+  const url = `${location.origin}/devedor`;
+  const text = "Acompanhe aqui os valores em aberto comigo. Entre com o seu nome e o código que te passei:";
+  try {
+    if (navigator.share) await navigator.share({ text, url });
+    else {
+      await navigator.clipboard.writeText(`${text} ${url}`);
+      toast("Link copiado");
+    }
+  } catch (e) {
+    // Cancelou o compartilhamento: nada a fazer. Sem acesso à área de transferência: mostra o link para copiar à mão
+    if (!(e instanceof DOMException && e.name === "AbortError")) window.prompt("Copie o link e envie:", url);
+  }
 }
 
 /** Parcelas que ainda não venceram, recolhidas por padrão. */

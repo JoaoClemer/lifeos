@@ -10,7 +10,16 @@ export default defineConfig(async () => {
         wrangler: { configPath: "./wrangler.jsonc" },
         miniflare: {
           // Valores de teste (os reais ficam em .dev.vars e wrangler secret)
-          bindings: { TEST_MIGRATIONS: migrations, APP_PASSWORD: "senha-de-teste", MCP_TOKEN: "token-de-teste-0123456789" },
+          bindings: {
+            TEST_MIGRATIONS: migrations,
+            APP_PASSWORD: "senha-de-teste",
+            MCP_TOKEN: "token-de-teste-0123456789",
+            // Códigos de acesso da página /devedor (o de CURTO é curto demais e deve ser ignorado)
+            DEBTOR_CODE_ANA: "codigo-da-ana",
+            DEBTOR_CODE_PEDRO: "codigo-do-pedro",
+            DEBTOR_CODE_MARIA_CLARA: "codigo-da-maria",
+            DEBTOR_CODE_CURTO: "123",
+          },
         },
       }),
     ],

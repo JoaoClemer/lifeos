@@ -47,7 +47,7 @@ O módulo de finanças nasceu para substituir uma planilha de controle mensal. A
 | **Gastos → Avulsos** | Lançamentos do mês agrupados por dia, com filtro por cartão ou orçamento |
 | **Gastos → Parcelados** | Parcela atual (ex.: 4/12), mês da última parcela, quanto falta pagar e o que termina neste mês |
 | **Gastos → Fixos** | Assinaturas e contas: marcar como pago, ajustar o valor só de um mês (ex.: conta de luz), encerrar. E os **orçamentos** |
-| **Devedores** | Quem te deve, agrupado por pessoa, com “Recebi tudo”. Aceita **devedor parcelado**: as próximas parcelas ficam separadas até vencerem |
+| **Devedores** | Quem te deve, agrupado por pessoa, com “Recebi tudo”. Aceita **devedor parcelado**: as próximas parcelas ficam separadas até vencerem. Quem tem código pode [acompanhar os próprios valores](#página-dos-devedores) |
 | **Metas** | Saldo investido, valor da meta, aporte mensal com check, previsão de quando atinge e quanto guardar por mês para cumprir o prazo |
 | **Entradas** | Dinheiro além do salário fixo (13º, bônus, PLR, freela…), somado à renda do mês em que entra |
 | **Ajustes** | Cartões (dia de fechamento, vencimento e em que você paga), salário líquido fixo, link do conector do Claude e backup em JSON |
@@ -61,6 +61,23 @@ O módulo de finanças nasceu para substituir uma planilha de controle mensal. A
 - **Renda do mês:** salário fixo (em Ajustes) + entradas extras do mês. A sobra do mês é renda − gastos − aportes planejados.
 - **Saldo acumulado:** o saldo final de um mês (saldo inicial + sobra) vira o saldo inicial do seguinte, também nos meses futuros, como previsão. Se o valor real for outro (você conferiu o banco), ajuste o saldo inicial do mês em **Resumo → Saldo → Ajustar**: os meses seguintes passam a partir dele, e dá para voltar ao automático. O acúmulo começa no mês em que o recurso foi instalado, com saldo 0, para não somar meses antigos com dados incompletos.
 - **Metas:** cada meta é uma “caixinha” com saldo. Aportes, resgates e atualizações de saldo (rendimentos) ficam no histórico. O check do mês lança o aporte planejado.
+
+### Página dos devedores
+
+Quem te deve pode acompanhar os próprios valores em `https://financas.<seu-subdominio>.workers.dev/devedor`: a pessoa escolhe o nome, digita o código dela e vê o que está em aberto, as próximas parcelas e o que já pagou. Ela não vê cartões, outras pessoas nem nada do resto do app.
+
+Cada pessoa tem um código próprio, guardado como segredo na Cloudflare (igual à senha do app), numa variável `DEBTOR_CODE_<NOME>`. O nome vai em maiúsculas, sem acento, com `_` no lugar dos espaços, e precisa bater com o nome usado nos devedores:
+
+```bash
+openssl rand -hex 4                              # gera um código (ou invente um com 6+ caracteres)
+npx wrangler secret put DEBTOR_CODE_JOSE         # para "José"
+npx wrangler secret put DEBTOR_CODE_MARIA_CLARA  # para "Maria Clara"
+```
+
+- Só aparece na lista quem tem código (de 6 caracteres ou mais). Os nomes dessa lista ficam visíveis para quem abrir a página; os valores, só com o código.
+- Em **Devedores**, quem já tem acesso ganha um botão de compartilhar ao lado do nome, que envia o link da página. Mande o código à parte.
+- Para trocar o código, rode o `secret put` de novo: quem entrou com o código antigo sai na hora. Para tirar o acesso: `npx wrangler secret delete DEBTOR_CODE_<NOME>`.
+- A descrição de cada devedor aparece para a pessoa como está escrita no app.
 
 ## Conversando com o Claude (MCP)
 
@@ -213,6 +230,7 @@ O link do conector aparece em **Ajustes → Conectar ao Claude** (botão copiar)
 ## Segurança e privacidade
 
 - **App:** login com uma senha única (`APP_PASSWORD`). A sessão fica num cookie `HttpOnly` assinado com HMAC e dura 180 dias.
+- **Devedores:** cada pessoa entra em `/devedor` com o próprio código (`DEBTOR_CODE_<NOME>`) e só recebe os próprios valores. A sessão é um cookie separado, restrito a `/api/debtor`, assinado com o código dela e válido por 30 dias. Ela não abre o app, e a sessão do app não abre a página dela.
 - **MCP:** acesso protegido por um token separado (`MCP_TOKEN`), que vai na URL do conector ou no header `Authorization: Bearer`. O link funciona como uma senha e dá acesso a todos os módulos (agenda, tarefas, treinos e finanças): se vazar, troque com `npx wrangler secret put MCP_TOKEN` e atualize o conector.
 - **Nada pessoal no repositório:** os segredos ficam em `.dev.vars` (local) e `wrangler secret` (produção), ambos fora do git. Dados reais também ficam fora: o `.gitignore` ignora qualquer `*.local.sql`.
 - **Backup:** em **Ajustes → Baixar backup (JSON)** você exporta todos os dados, de todos os módulos.
@@ -241,6 +259,7 @@ src/worker/          Worker: API REST (Hono), autenticação, serviços e servid
   modules/           LifeOS: tasks, agenda, training e today (composição), cada um com service, rotas e ferramentas MCP
   mcp/               protocolo MCP, ferramentas de finanças e utilitários das ferramentas
 src/client/          app React (PWA)
+  debtor/            página pública dos devedores (/devedor, entrada separada em devedor.html)
   modules/           telas e formulários de Hoje, Agenda, Tarefas e Treinos
   views/ forms/      telas e formulários de finanças
 public/              ícones, manifest e service worker
