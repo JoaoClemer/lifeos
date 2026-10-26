@@ -1,4 +1,4 @@
-import { Activity, CalendarDays, HandCoins, LayoutDashboard, ListTodo, Receipt, Settings, Sun, Target } from "lucide-react";
+import { Activity, CalendarDays, HandCoins, Handshake, LayoutDashboard, ListTodo, Receipt, Settings, Sun, Target } from "lucide-react";
 
 // Telas do LifeOS. `section` agrupa a barra lateral (finance ganha título); `month` mostra o seletor de mês no cabeçalho.
 export const NAV = [
@@ -9,6 +9,7 @@ export const NAV = [
   { view: "summary", label: "Resumo", icon: LayoutDashboard, title: "Resumo", month: true, section: "finance" },
   { view: "expenses", label: "Gastos", icon: Receipt, title: "Gastos", month: true, section: "finance" },
   { view: "receivables", label: "Devedores", icon: HandCoins, title: "Devedores", month: false, section: "finance" },
+  { view: "payables", label: "Devo", icon: Handshake, title: "O que eu devo", month: false, section: "finance" },
   { view: "goals", label: "Metas", icon: Target, title: "Metas e investimentos", month: true, section: "finance" },
   { view: "settings", label: "Ajustes", icon: Settings, title: "Ajustes", month: false, section: "system" },
 ] as const;

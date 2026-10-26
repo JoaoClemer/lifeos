@@ -1,6 +1,7 @@
 // Trava de isolamento entre pessoas, ligada em todos os testes (via setup.ts).
-// Toda consulta feita pelo código do Worker que cita uma tabela com dono precisa mencionar user_id
-// ao menos uma vez por tabela citada (subconsultas inclusive). SQL escrito nos próprios testes fica de fora.
+// Toda consulta feita pelo código do Worker que cita uma tabela com dono precisa mencionar uma coluna de pessoa
+// (user_id, debtor_user_id, linked_user_id...) ao menos uma vez por tabela citada (subconsultas inclusive).
+// SQL escrito nos próprios testes fica de fora.
 
 import { OWNED_TABLES } from "../src/worker/owned";
 
@@ -11,7 +12,8 @@ const OWNED = new Set<string>(OWNED_TABLES);
 /** A consulta cita mais tabelas com dono do que menções a user_id? */
 export function missingOwner(sql: string): boolean {
   const refs = [...sql.matchAll(/\b(?:FROM|JOIN|INTO|UPDATE)\s+([a-z_]+)/gi)].filter((m) => OWNED.has(m[1].toLowerCase())).length;
-  const scoped = (sql.match(/\buser_id\b/g) ?? []).length;
+  // user_id ou colunas de acesso compartilhado (debtor_user_id: quem deve lê a linha de quem tem a receber)
+  const scoped = (sql.match(/\b[a-z_]*user_id\b/g) ?? []).length;
   return refs > scoped;
 }
 

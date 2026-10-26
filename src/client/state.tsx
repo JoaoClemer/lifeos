@@ -35,6 +35,7 @@ export type SheetState =
   | { kind: "installment"; item: Installment }
   | { kind: "recurring"; item: Recurring }
   | { kind: "receivable"; item: Receivable }
+  | { kind: "person-link"; person: string }
   | { kind: "income"; item: Income }
   | { kind: "balance"; month: string; balance: MonthBalance }
   | { kind: "goal"; item?: Goal }

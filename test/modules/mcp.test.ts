@@ -54,9 +54,15 @@ describe("catálogo", () => {
       "registrar_treino",
       "status_treino",
       "remover_treino",
+      // Dívidas conectadas (fase 3 do LifeOS para várias pessoas)
+      "listar_minhas_dividas",
+      "marcar_paguei",
+      "contestar_divida",
+      "ligar_devedor",
     ];
     expect(tools.map((t) => t.name).slice(19)).toEqual(lifeos);
-    for (const n of ["revisao_diaria", "revisao_semanal", "agenda", "listar_tarefas", "treinos_semana"]) expect(byName.get(n)!.annotations?.readOnlyHint).toBe(true);
+    for (const n of ["revisao_diaria", "revisao_semanal", "agenda", "listar_tarefas", "treinos_semana", "listar_minhas_dividas"])
+      expect(byName.get(n)!.annotations?.readOnlyHint).toBe(true);
     for (const n of ["cancelar_evento", "remover_tarefa", "remover_treino"]) expect(byName.get(n)!.annotations?.destructiveHint).toBe(true);
     expect(new Set(tools.map((t) => t.name)).size).toBe(tools.length);
   });

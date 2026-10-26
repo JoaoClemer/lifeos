@@ -7,9 +7,10 @@ import { AGENDA_TOOLS } from "../modules/agenda/tools";
 import { TASK_TOOLS } from "../modules/tasks/tools";
 import { TODAY_TOOLS } from "../modules/today/tools";
 import { TRAINING_TOOLS } from "../modules/training/tools";
+import { DEBT_TOOLS } from "../modules/connections/tools";
 import { TOOLS as FINANCE_TOOLS } from "./tools";
 
-const TOOLS = [...FINANCE_TOOLS, ...TODAY_TOOLS, ...AGENDA_TOOLS, ...TASK_TOOLS, ...TRAINING_TOOLS];
+const TOOLS = [...FINANCE_TOOLS, ...TODAY_TOOLS, ...AGENDA_TOOLS, ...TASK_TOOLS, ...TRAINING_TOOLS, ...DEBT_TOOLS];
 
 const SERVER_INFO = { name: "lifeos", title: "LifeOS", version: "0.2.0" };
 const LATEST_PROTOCOL = "2025-06-18";

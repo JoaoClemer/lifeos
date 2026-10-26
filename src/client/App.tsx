@@ -15,7 +15,9 @@ import { AppProvider, clearCache, type NewTab, useApp } from "./state";
 import { Button, cx, ErrorBoundary, LinkButton, TextInput } from "./ui";
 import { ExpensesView } from "./views/ExpensesView";
 import { GoalsView } from "./views/GoalsView";
+import { PayablesView } from "./views/PayablesView";
 import { ReceivablesView } from "./views/ReceivablesView";
+import { ConnectView } from "./views/settings/ConnectView";
 import { SettingsView } from "./views/SettingsView";
 import { SummaryView } from "./views/SummaryView";
 
@@ -94,7 +96,12 @@ function Shell({ onLogout }: { onLogout: () => void }) {
   const TasksIcon = NAV[2].icon;
 
   let page: ReactNode;
-  switch (current.view) {
+  // Link de conexão (#/conectar/<token>): confirma e conecta com quem mandou
+  const connectToken = route.view === "conectar" ? route.sub : undefined;
+  switch (connectToken ? "conectar" : current.view) {
+    case "conectar":
+      page = <ConnectView token={connectToken!} />;
+      break;
     case "today":
       page = <TodayView />;
       break;
@@ -115,6 +122,9 @@ function Shell({ onLogout }: { onLogout: () => void }) {
       break;
     case "receivables":
       page = <ReceivablesView />;
+      break;
+    case "payables":
+      page = <PayablesView />;
       break;
     case "goals":
       page = <GoalsView />;

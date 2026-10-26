@@ -29,6 +29,7 @@ export function SummaryView() {
             { label: "Parcelados", value: t.installments_cents, to: "expenses/installments", cls: "bg-accent" },
             { label: "Fixos", value: t.recurring_cents, to: "expenses/recurring", cls: "bg-accent/55" },
             { label: "Avulsos", value: t.one_off_cents, to: "expenses/one-off", cls: "bg-accent/30" },
+            ...(t.payables_month_cents ? [{ label: "Devo", value: t.payables_month_cents, to: "payables", cls: "bg-warn/50" }] : []),
           ]}
           total={t.total_cents}
           onOpen={navigate}
@@ -203,6 +204,28 @@ export function SummaryView() {
           {t.receivable_future_cents > 0 && (
             <p className="px-1 text-xs text-muted">+ {formatBRL(t.receivable_future_cents)} em parcelas futuras de devedores parcelados.</p>
           )}
+        </Section>
+      )}
+
+      {summary.owed_by_person.length > 0 && (
+        <Section title="Você deve" action={<Money cents={t.payable_pending_cents} className="text-sm font-semibold text-danger" />}>
+          <List>
+            {summary.owed_by_person.map((p) => (
+              <Row
+                key={p.user_id}
+                left={<Avatar name={p.person} />}
+                title={p.person}
+                subtitle={`${p.count} ${p.count === 1 ? "item" : "itens"} em aberto`}
+                right={
+                  <span className="flex items-center gap-1">
+                    <Money cents={p.total_cents} className="font-semibold" />
+                    <ChevronRight size={16} className="text-muted" />
+                  </span>
+                }
+                onClick={() => navigate("payables")}
+              />
+            ))}
+          </List>
         </Section>
       )}
 

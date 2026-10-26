@@ -80,6 +80,7 @@ export const TOOLS: Tool[] = [
         `• Fixos (inclui orçamentos): ${brl(t.recurring_cents)}${t.budget_overflow_cents ? ` — orçamentos estourados em ${brl(t.budget_overflow_cents)}` : ""}`,
         `• Avulsos: ${brl(t.one_off_cents)}`,
       ];
+      if (t.payables_month_cents) lines.push(`• Devo a pessoas: ${brl(t.payables_month_cents)}`);
       if (t.income_cents != null) {
         const breakdown = t.income_extra_cents
           ? ` (salário ${brl(t.income_base_cents ?? 0)} + entradas extras ${brl(t.income_extra_cents)})`
@@ -106,6 +107,10 @@ export const TOOLS: Tool[] = [
       lines.push("", `A receber (pendente, todos os meses): ${brl(t.receivable_pending_cents)}`);
       for (const p of s.pending_by_person) lines.push(`• ${p.person}: ${brl(p.total_cents)} (${p.count} itens)`);
       if (t.receivable_future_cents) lines.push(`Parcelas futuras de devedores parcelados (ainda não venceram): ${brl(t.receivable_future_cents)}`);
+      if (s.owed_by_person.length) {
+        lines.push("", `Você deve (em aberto, a pessoas conectadas): ${brl(t.payable_pending_cents)}`);
+        for (const o of s.owed_by_person) lines.push(`• ${o.person}: ${brl(o.total_cents)} (${o.count} itens)`);
+      }
       if (t.goals_planned_cents || t.goals_done_cents)
         lines.push("", `Aportes em metas no mês: ${brl(t.goals_done_cents)} feitos de ${brl(t.goals_planned_cents)} planejados`);
       return lines.join("\n");
@@ -399,7 +404,9 @@ export const TOOLS: Tool[] = [
       const line = (r: Receivable) =>
         `• [${r.id}] ${r.person} — ${r.description}${parcelLabel(r)}: ${brl(r.amount_cents)} (${formatDateBR(r.date)}${
           r.account_id ? `, ${names.get(r.account_id)}` : ""
-        })${r.received_at ? ` ✔ recebido em ${formatDateBR(r.received_at)}` : ""}`;
+        })${r.received_at ? ` ✔ recebido em ${formatDateBR(r.received_at)}` : ""}${
+          !r.received_at && r.paid_claimed_at ? ` ⏳ ${r.person} disse que pagou em ${formatDateBR(r.paid_claimed_at)} (confirme com marcar_recebido)` : ""
+        }${!r.received_at && r.disputed_at ? ` ⚠️ contestado por ${r.person}: ${r.dispute_note}` : ""}`;
       const out = [`Total pendente: ${brl(pending)}`, ...rows.map(line)];
       if (future.length) {
         out.push(

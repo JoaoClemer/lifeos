@@ -247,6 +247,10 @@ export async function inviteVerify(db: D1Database, rp: RelyingParty, input: unkn
         .prepare("INSERT INTO user_settings (user_id, key, value) VALUES ((SELECT user_id FROM passkeys WHERE id = ?), 'balance_start_month', ?)")
         .bind(cred.id, todayIn(defaultTimezone).slice(0, 7)),
       db.prepare("UPDATE invites SET user_id = (SELECT user_id FROM passkeys WHERE id = ?) WHERE id = ?").bind(cred.id, inv.id),
+      // Quem convidou e quem entrou já ficam conectados
+      db
+        .prepare("INSERT OR IGNORE INTO connections (user_a, user_b) SELECT MIN(user_id, ?1), MAX(user_id, ?1) FROM passkeys WHERE id = ?2")
+        .bind(inv.created_by, cred.id),
     ]);
   }
   const owner = await db.prepare("SELECT user_id FROM passkeys WHERE id = ?").bind(cred.id).first<{ user_id: number }>();

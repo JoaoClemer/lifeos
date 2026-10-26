@@ -2,7 +2,7 @@ import { z } from "zod";
 import { DATE_RE, MONTH_RE, referenceMonth } from "../../shared/month";
 import type { Account, Expense } from "../../shared/types";
 import { type Ctx, mustGet, nn, updateRow, UserError } from "../lib";
-import { canonicalPerson } from "./receivables";
+import { canonicalPerson, debtorFor } from "./receivables";
 
 const cents = z.number().int();
 
@@ -97,7 +97,12 @@ export async function createExpense(ctx: Ctx, input: z.input<typeof ExpenseInput
   const account = await accountOrNull(ctx, e.account_id);
   await checkBudget(ctx, e.budget_id);
   const month = e.month ?? referenceMonth(date, account);
-  const splits = await Promise.all((e.splits ?? []).map(async (s) => ({ ...s, person: await canonicalPerson(ctx, s.person) })));
+  const splits = await Promise.all(
+    (e.splits ?? []).map(async (s) => {
+      const person = await canonicalPerson(ctx, s.person);
+      return { ...s, person, debtor: await debtorFor(ctx, person) };
+    }),
+  );
   const othersTotal = splits.reduce((s, x) => s + x.amount_cents, 0);
   const myShare = e.amount_cents - othersTotal;
   if (myShare < 0) throw new UserError("A soma das partes dos outros é maior que o valor total");
@@ -116,10 +121,10 @@ export async function createExpense(ctx: Ctx, input: z.input<typeof ExpenseInput
     stmts.push(
       ctx.db
         .prepare(
-          `INSERT INTO receivables (user_id, person, description, amount_cents, date, month, account_id, expense_id)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ${myShare > 0 ? "(SELECT MAX(id) FROM expenses WHERE user_id = ?1)" : "NULL"}) RETURNING id`,
+          `INSERT INTO receivables (user_id, person, description, amount_cents, date, month, account_id, debtor_user_id, expense_id)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ${myShare > 0 ? "(SELECT MAX(id) FROM expenses WHERE user_id = ?1)" : "NULL"}) RETURNING id`,
         )
-        .bind(ctx.userId, s.person, e.description, s.amount_cents, date, month, account?.id ?? null),
+        .bind(ctx.userId, s.person, e.description, s.amount_cents, date, month, account?.id ?? null, s.debtor),
     );
   }
   // batch = transação: o gasto e as partes dos outros entram juntos

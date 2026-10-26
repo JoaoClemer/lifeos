@@ -75,6 +75,8 @@ describe("convite e passkey", () => {
     const settings = await env.DB.prepare("SELECT key, value FROM user_settings WHERE user_id = ?").bind(p.id).all();
     expect(settings.results).toEqual([{ key: "balance_start_month", value: String(me.json.today).slice(0, 7) }]);
     expect((await call("GET", "/api/expenses", undefined, p.cookie)).json).toEqual([]);
+    // Quem convidou e quem entrou já ficam conectados
+    expect((await call("GET", "/api/connections", undefined, p.cookie)).json).toMatchObject([{ user_id: 1 }]);
   });
 
   it("o link vale uma vez só", async () => {

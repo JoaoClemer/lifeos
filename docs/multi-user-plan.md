@@ -306,3 +306,47 @@ Resultado: os 73 arquivos ficaram idênticos nos três snapshots. A página `/de
 
 **Deploy:** antes, `npx wrangler secret put SESSION_SECRET`. Depois do deploy, o dono entra com a senha (ou com a sessão atual) e cadastra a passkey em Ajustes.
 
+### Fase 3: conexões e dívidas conectadas (26/10/2026)
+
+**O que mudou:**
+
+- **Migração `0012_connections_and_shared_debts.sql`:**
+  - `connections` (um par por linha; o convite já conecta quem convidou e quem entrou, inclusive para contas criadas antes desta migração);
+  - `connection_links` (uso único, 7 dias, com hash);
+  - `person_links` (nome dos devedores → conta conectada);
+  - `receivables` ganha `debtor_user_id`, `paid_claimed_at`, `disputed_at` e `dispute_note`.
+- **Uma fonte de verdade:** quem deve lê a linha de quem tem a receber (`services/payables.ts`), sem cópias.
+  - Lançamentos novos com um nome ligado já nascem com `debtor_user_id`, inclusive os de "dividir com" e os devedores parcelados.
+  - Trocar o nome do item recalcula a ligação.
+- **Resumo de quem deve:** `payables_month_cents` ("Devo a pessoas") entra no total do mês e, com a mesma regra, no saldo acumulado (`balance.ts`). Também ganha `payable_pending_cents` e `owed_by_person`.
+- **"Paguei":** fica aguardando a confirmação. Quando quem tem a receber confirma (marca recebido), a contestação some. Voltar para pendente desfaz o "paguei".
+- **Desligar o nome ou desconectar** tira o acesso; a dívida continua com quem tem a receber. Excluir a conta também desliga.
+- **MCP:** `listar_minhas_dividas`, `marcar_paguei`, `contestar_divida` e `ligar_devedor`.
+  - `listar_devedores` mostra "disse que pagou" e "contestado".
+  - `resumo_mes` mostra "Devo a pessoas" só quando há valor, por isso o resumo de quem não deve nada não muda.
+- **Telas:**
+  - "Devo";
+  - em Devedores, a ligação nome ↔ conta e as marcações;
+  - no formulário do devedor, a contestação com o botão de resolver;
+  - Ajustes → Conexões;
+  - a tela para aceitar o link (`#/conectar/<token>`);
+  - no Resumo, o segmento "Devo" e a seção "Você deve".
+- **Trava de dono:** passa a aceitar colunas de acesso compartilhado (`debtor_user_id`, `linked_user_id`) como escopo.
+
+**Testes:**
+
+- `test/modules/connections.test.ts` (10 casos):
+  - histórico e lançamentos novos visíveis sem dados internos;
+  - só dá para ligar a uma pessoa conectada;
+  - desligar, trocar o nome e desconectar;
+  - total do mês e saldo acumulado de quem deve, sem mudar o resumo de quem tem a receber;
+  - paguei → confirmação → desfazer;
+  - "paguei tudo" só no que venceu;
+  - contestar e resolver;
+  - quem deve não altera valores, e uma terceira pessoa não vê nada;
+  - link de conexão;
+  - MCP de ponta a ponta.
+- As rotas e ferramentas novas entraram no teste de isolamento.
+- O snapshot do resumo mudou só com os campos novos zerados.
+- 199 testes passando.
+

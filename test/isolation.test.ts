@@ -166,6 +166,17 @@ const MUTATIONS: Record<string, { body?: unknown; status: number }> = {
   "POST /me/passkeys/verify": { body: { challengeId: "x", response: { id: "passkey-pessoa-1" } }, status: 401 },
   "POST /me/mcp-tokens": { body: { name: "Claude" }, status: 201 },
   "DELETE /me/mcp-tokens/:id": { status: 404 },
+  // Conexões e dívidas conectadas: a pessoa 2 não está conectada à 1
+  "POST /connections/link": { status: 201 },
+  "POST /connections/inspect": { body: { token: "nao-existe" }, status: 410 },
+  "POST /connections/accept": { body: { token: "nao-existe" }, status: 410 },
+  "DELETE /connections/:id": { status: 404 },
+  "PUT /person-links": { body: { person: "Ana", user_id: 1 }, status: 404 },
+  "DELETE /person-links": { body: { person: "Ana" }, status: 404 },
+  "POST /receivables/:id/resolve-dispute": { status: 404 },
+  "POST /payables/mark-paid": { body: { ids: [1] }, status: 404 },
+  "PUT /payables/:id/dispute": { body: { note: "não é meu" }, status: 404 },
+  "DELETE /payables/:id/dispute": { status: 404 },
   // Administração: só admin
   "POST /admin/invites": { body: { name: "x" }, status: 403 },
   "DELETE /admin/invites/:id": { status: 403 },
@@ -269,6 +280,11 @@ describe("isolamento entre pessoas", () => {
       ["registrar_entrada", { descricao: "x", valor: 10 }],
       ["criar_meta", { nome: "Meta da pessoa 2" }],
       ["cadastrar_conta", { nome: "Conta da pessoa 2", tipo: "pix" }],
+      ["listar_minhas_dividas", { incluir_pagas: true }],
+      ["marcar_paguei", { ids: [1] }],
+      ["marcar_paguei", { pessoa: "Ana" }],
+      ["contestar_divida", { id: 1, motivo: "não é meu" }],
+      ["ligar_devedor", { pessoa: "Ana", conta: "Ana" }],
     ];
     const called = new Set(calls.map(([name]) => name));
     const listRes = await handleMcpRequest(

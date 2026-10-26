@@ -214,7 +214,9 @@ export async function deleteMyAccount(ctx: Ctx, input: unknown): Promise<void> {
   if (me.role === "admin") throw new UserError("Quem administra o LifeOS não pode excluir a própria conta");
   await ctx.db.batch([
     ...OWNED_TABLES.map((t) => ctx.db.prepare(`DELETE FROM ${t} WHERE user_id = ?`).bind(ctx.userId)),
-    // passkeys, conectores e convites saem junto (ON DELETE CASCADE)
+    // O que a pessoa devia a outras continua com quem tem a receber, só deixa de estar ligado a ela
+    ctx.db.prepare("UPDATE receivables SET debtor_user_id = NULL WHERE debtor_user_id = ?").bind(ctx.userId),
+    // passkeys, conectores, convites, conexões e nomes ligados a ela saem junto (ON DELETE CASCADE)
     ctx.db.prepare("DELETE FROM users WHERE id = ?").bind(ctx.userId),
   ]);
 }

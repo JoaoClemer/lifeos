@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { formatBRL } from "../../shared/money";
-import { addMonths, monthLabel, referenceMonth } from "../../shared/month";
+import { addMonths, formatDateBR, monthLabel, referenceMonth } from "../../shared/month";
 import type { Receivable } from "../../shared/types";
 import { api } from "../api";
 import { useApp, useData, useMutation } from "../state";
@@ -91,6 +91,26 @@ export function ReceivableForm({ item, person: presetPerson, onDone }: { item?: 
       <Field label="Descrição" htmlFor="rcv-desc">
         <TextInput id="rcv-desc" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Ex.: Passagem, Mercado, Celular" />
       </Field>
+
+      {item && !item.received_at && item.disputed_at && (
+        <div className="space-y-2 rounded-xl bg-danger-soft p-3 text-sm">
+          <p className="font-semibold text-danger">{item.person} contestou este item</p>
+          <p className="text-text">“{item.dispute_note}”</p>
+          <Button
+            variant="secondary"
+            className="h-9 px-3 text-sm"
+            disabled={busy}
+            onClick={async () => (await run(() => api.post(`/api/receivables/${item.id}/resolve-dispute`), "Contestação resolvida")) && onDone()}
+          >
+            Marcar como resolvida
+          </Button>
+        </div>
+      )}
+      {item && !item.received_at && item.paid_claimed_at && (
+        <p className="rounded-xl bg-warn-soft p-3 text-sm text-warn">
+          {item.person} disse que pagou em {formatDateBR(item.paid_claimed_at)}. Confira e marque como recebido.
+        </p>
+      )}
 
       {item?.installment_no && (
         <p className="rounded-xl bg-surface-2 p-3 text-sm text-muted">

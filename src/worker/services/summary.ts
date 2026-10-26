@@ -8,6 +8,7 @@ import { listGoals } from "./goals";
 import { listInstallments } from "./installments";
 import { getMonthBalance } from "./balance";
 import { listIncomes } from "./incomes";
+import { listPayables, payablesByMonth } from "./payables";
 import { isDue, listPeople, listReceivables } from "./receivables";
 import { listRecurring } from "./recurring";
 
@@ -45,7 +46,9 @@ export async function updateSettings(ctx: Ctx, patch: z.input<typeof SettingsPat
  * - por conta = o que efetivamente cai em cada cartão/conta (inclui a parte dos devedores passada no cartão)
  */
 export async function getSummary(ctx: Ctx, month: string): Promise<Summary> {
-  const [accounts, installments, recurring, expenses, receivablesMonth, allPending, goals, settings, peopleNames, incomes, balance] = await Promise.all([
+  // Parcelas de devedores parcelados só contam como pendentes a partir do mês delas
+  const refMonth = month > ctx.month ? month : ctx.month;
+  const [accounts, installments, recurring, expenses, receivablesMonth, allPending, goals, settings, peopleNames, incomes, balance, owedPending, owedByMonth] = await Promise.all([
     listAccounts(ctx, true),
     listInstallments(ctx, month),
     listRecurring(ctx, month),
@@ -57,10 +60,10 @@ export async function getSummary(ctx: Ctx, month: string): Promise<Summary> {
     listPeople(ctx),
     listIncomes(ctx, month),
     getMonthBalance(ctx, month),
+    listPayables(ctx, { refMonth }),
+    payablesByMonth(ctx),
   ]);
 
-  // Parcelas de devedores parcelados só contam como pendentes a partir do mês delas
-  const refMonth = month > ctx.month ? month : ctx.month;
   const pending = allPending.filter((r) => isDue(r, refMonth));
   const future = allPending.filter((r) => !isDue(r, refMonth));
 
@@ -126,7 +129,17 @@ export async function getSummary(ctx: Ctx, month: string): Promise<Summary> {
     people.set(key, p);
   }
 
-  const total = installmentsTotal + recurringTotal + oneOff;
+  // "Devo a pessoas": sua parte em gastos que pessoas conectadas passaram no cartão delas
+  const payablesMonth = owedByMonth.get(month) ?? 0;
+  const owed = new Map<number, { user_id: number; person: string; total_cents: number; count: number }>();
+  for (const p of owedPending.filter((x) => x.due)) {
+    const o = owed.get(p.creditor_id) ?? { user_id: p.creditor_id, person: p.creditor_name ?? "Pessoa", total_cents: 0, count: 0 };
+    o.total_cents += p.amount_cents;
+    o.count++;
+    owed.set(p.creditor_id, o);
+  }
+
+  const total = installmentsTotal + recurringTotal + oneOff + payablesMonth;
   const incomeExtra = incomes.reduce((s, i) => s + i.amount_cents, 0);
   const income = settings.income_cents == null && incomeExtra === 0 ? null : (settings.income_cents ?? 0) + incomeExtra;
   const goalsPlanned = goals.reduce((s, g) => s + g.month_planned_cents, 0);
@@ -150,10 +163,13 @@ export async function getSummary(ctx: Ctx, month: string): Promise<Summary> {
       goals_planned_cents: goalsPlanned,
       goals_done_cents: goalsDone,
       leftover_cents: income != null ? income - total - Math.max(goalsPlanned, goalsDone) : null,
+      payables_month_cents: payablesMonth,
+      payable_pending_cents: [...owed.values()].reduce((s, o) => s + o.total_cents, 0),
     },
     by_account,
     budgets,
     pending_by_person: [...people.values()].sort((a, b) => b.total_cents - a.total_cents),
+    owed_by_person: [...owed.values()].sort((a, b) => b.total_cents - a.total_cents),
     balance,
   };
 }

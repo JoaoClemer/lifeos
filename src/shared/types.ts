@@ -82,6 +82,13 @@ export interface Receivable {
   installment_group: string | null;
   installment_no: number | null;
   installment_total: number | null;
+  /** Conta de quem deve, quando o nome está ligado a uma pessoa conectada (ela vê o item em "Devo"). */
+  debtor_user_id: number | null;
+  /** Quem deve marcou "paguei": aguardando sua confirmação. */
+  paid_claimed_at: string | null;
+  /** Quem deve contestou (com o motivo). */
+  disputed_at: string | null;
+  dispute_note: string | null;
 }
 
 /** Entrada extra de dinheiro no mês (13º, bônus, PLR...). O salário fixo fica em Settings.income_cents. */
@@ -187,10 +194,16 @@ export interface Summary {
     goals_done_cents: number;
     /** Renda - gastos - aportes planejados (null se renda não configurada). */
     leftover_cents: number | null;
+    /** "Devo a pessoas": sua parte em gastos que pessoas conectadas passaram no cartão delas, neste mês (já em total_cents). */
+    payables_month_cents: number;
+    /** O que você deve e ainda não foi recebido pela outra pessoa (até este mês). */
+    payable_pending_cents: number;
   };
   by_account: AccountTotal[];
   budgets: BudgetStatus[];
   pending_by_person: { person: string; total_cents: number; count: number }[];
+  /** O que você deve, por pessoa conectada (pendente até este mês). */
+  owed_by_person: { user_id: number; person: string; total_cents: number; count: number }[];
   /** Saldo acumulado (null antes do mês em que o acúmulo começa). */
   balance: MonthBalance | null;
 }

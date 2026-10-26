@@ -7,6 +7,7 @@ import { useApp, useData, useMutation } from "../state";
 import { AccountIcon, Badge, Button, Card, Field, List, MoneyInput, Row, Section } from "../ui";
 import { AccountSection } from "./settings/AccountSection";
 import { ClaudeSection } from "./settings/ClaudeSection";
+import { ConnectionsSection } from "./settings/ConnectionsSection";
 import { PeopleSection } from "./settings/PeopleSection";
 
 export function SettingsView({ onLogout }: { onLogout: () => void }) {
@@ -104,6 +105,8 @@ export function SettingsView({ onLogout }: { onLogout: () => void }) {
       </Section>
 
       <ClaudeSection />
+
+      <ConnectionsSection />
 
       {me.role === "admin" && <PeopleSection />}
 
