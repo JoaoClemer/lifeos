@@ -54,6 +54,7 @@ exports[`getSummary > setembro, outubro e novembro/2026: retrato completo > 2026
     },
   ],
   "month": "2026-09",
+  "owed_by_person": [],
   "pending_by_person": [
     {
       "count": 1,
@@ -77,6 +78,8 @@ exports[`getSummary > setembro, outubro e novembro/2026: retrato completo > 2026
     "installments_cents": 95990,
     "leftover_cents": 260040,
     "one_off_cents": 30000,
+    "payable_pending_cents": 0,
+    "payables_month_cents": 0,
     "receivable_future_cents": 40000,
     "receivable_month_cents": 15000,
     "receivable_pending_cents": 29300,
@@ -148,6 +151,7 @@ exports[`getSummary > setembro, outubro e novembro/2026: retrato completo > 2026
     },
   ],
   "month": "2026-10",
+  "owed_by_person": [],
   "pending_by_person": [
     {
       "count": 1,
@@ -171,6 +175,8 @@ exports[`getSummary > setembro, outubro e novembro/2026: retrato completo > 2026
     "installments_cents": 95990,
     "leftover_cents": 314568,
     "one_off_cents": 47345,
+    "payable_pending_cents": 0,
+    "payables_month_cents": 0,
     "receivable_future_cents": 40000,
     "receivable_month_cents": 29300,
     "receivable_pending_cents": 29300,
@@ -234,6 +240,7 @@ exports[`getSummary > setembro, outubro e novembro/2026: retrato completo > 2026
     },
   ],
   "month": "2026-11",
+  "owed_by_person": [],
   "pending_by_person": [
     {
       "count": 2,
@@ -257,6 +264,8 @@ exports[`getSummary > setembro, outubro e novembro/2026: retrato completo > 2026
     "installments_cents": 57000,
     "leftover_cents": 328790,
     "one_off_cents": 4230,
+    "payable_pending_cents": 0,
+    "payables_month_cents": 0,
     "receivable_future_cents": 20000,
     "receivable_month_cents": 20000,
     "receivable_pending_cents": 49300,

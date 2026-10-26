@@ -20,6 +20,7 @@ interface Bulk {
   incomes: Map<string, number>; // month -> entradas extras
   goals: Omit<GoalRow, "month_contrib_cents">[];
   goalContrib: Map<string, number>; // `${goal_id}|${month}` -> aportes - resgates
+  payables: Map<string, number>; // month -> "devo a pessoas" (sua parte em gastos de pessoas conectadas)
   salary: number | null;
   startSetting: string | null;
   manual: Map<string, { opening_cents: number; note: string | null }>;
@@ -39,6 +40,7 @@ async function loadBulk(ctx: Ctx): Promise<Bulk> {
     "SELECT goal_id, month, SUM(amount_cents) AS total FROM goal_entries WHERE user_id = ?1 AND kind IN ('contribution', 'withdrawal') GROUP BY goal_id, month",
     "SELECT key, value FROM user_settings WHERE user_id = ?1 AND key IN ('income_cents', 'balance_start_month')",
     "SELECT month, opening_cents, note FROM user_month_balances WHERE user_id = ?1",
+    "SELECT month, SUM(amount_cents) AS total FROM receivables WHERE debtor_user_id = ?1 GROUP BY month",
   ];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const r = (await ctx.db.batch(sql.map((s) => ctx.db.prepare(s).bind(ctx.userId)))).map((x) => x.results as any[]);
@@ -54,12 +56,13 @@ async function loadBulk(ctx: Ctx): Promise<Bulk> {
     salary: settings.income_cents != null && settings.income_cents !== "" ? Number(settings.income_cents) : null,
     startSetting: settings.balance_start_month || null,
     manual: new Map(r[8].map((m) => [m.month, { opening_cents: m.opening_cents, note: m.note }])),
+    payables: new Map(r[9].map((p) => [p.month, p.total])),
   };
 }
 
 /**
  * Sobra do mês com as mesmas regras do resumo (getSummary):
- * renda (salário + entradas) - (parcelados + fixos, orçamentos pelo maior entre previsto e gasto + avulsos) - aportes.
+ * renda (salário + entradas) - (parcelados + fixos, orçamentos pelo maior entre previsto e gasto + avulsos + devo a pessoas) - aportes.
  * Sem renda configurada, conta como 0.
  */
 function leftoverOf(b: Bulk, m: string): number {
@@ -71,6 +74,7 @@ function leftoverOf(b: Bulk, m: string): number {
     total += r.is_budget ? Math.max(amount, b.expenseSums.get(`${m}|${r.id}`) ?? 0) : amount;
   }
   total += b.expenseSums.get(`${m}|`) ?? 0; // avulsos fora de orçamento
+  total += b.payables.get(m) ?? 0; // devo a pessoas
   const extra = b.incomes.get(m) ?? 0;
   const income = (b.salary ?? 0) + extra;
   let planned = 0;

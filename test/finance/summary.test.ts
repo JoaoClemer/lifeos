@@ -111,7 +111,7 @@ describe("backup", () => {
     ).all<{ name: string }>();
     // Sem dono: pessoas e login (passkeys, convites, desafios, conectores) e as tabelas antigas de configurações
     // e saldos (paradas desde a 0010, só para rollback)
-    const notOwned = ["users", "passkeys", "invites", "auth_challenges", "mcp_tokens", "settings", "month_balances"];
+    const notOwned = ["users", "passkeys", "invites", "auth_challenges", "mcp_tokens", "connections", "connection_links", "settings", "month_balances"];
     expect(results.map((r) => r.name).sort()).toEqual([...OWNED_TABLES, ...notOwned].sort());
     expect(Object.keys(backup.tables).sort()).toEqual([...OWNED_TABLES].sort());
     expect(backup.tables.expenses).toHaveLength(9);

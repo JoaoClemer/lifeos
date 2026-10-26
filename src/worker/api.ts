@@ -16,6 +16,7 @@ import * as receivables from "./services/receivables";
 import * as recurring from "./services/recurring";
 import * as summary from "./services/summary";
 import { usersRoutes } from "./modules/users/routes";
+import { connectionsRoutes } from "./modules/connections/routes";
 
 export const api = new Hono<AppEnv>();
 
@@ -117,6 +118,7 @@ api.post("/receivables", async (c) => {
   return c.json(rows.length > 1 ? { ...rows[0], installments: rows } : rows[0], 201);
 });
 api.post("/receivables/mark-received", async (c) => c.json(await receivables.markReceived(ctxOf(c), await c.req.json())));
+api.post("/receivables/:id/resolve-dispute", async (c) => c.json(await receivables.resolveDispute(ctxOf(c), idParam(c.req.param("id")))));
 api.patch("/receivables/:id", async (c) =>
   c.json(await receivables.updateReceivable(ctxOf(c), idParam(c.req.param("id")), await c.req.json())),
 );
@@ -176,3 +178,4 @@ api.route("/", agendaRoutes);
 api.route("/", trainingRoutes);
 api.route("/", todayRoutes);
 api.route("/", usersRoutes);
+api.route("/", connectionsRoutes);

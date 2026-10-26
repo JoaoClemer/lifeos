@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { addMonths, DATE_RE, MONTH_RE, referenceMonth } from "../../shared/month";
-import { isDue } from "../../shared/receivables";
+import { isDue, personKey } from "../../shared/receivables";
 import type { Account, Receivable } from "../../shared/types";
 import { type Ctx, findByName, mustGet, normalize, updateRow, UserError } from "../lib";
 
@@ -30,7 +30,30 @@ export const ReceivablePatch = ReceivableFields.partial().extend({
   received_at: z.string().regex(DATE_RE).nullable().optional(),
 });
 
-const COLS = "id, person, description, amount_cents, date, month, account_id, expense_id, received_at, installment_group, installment_no, installment_total";
+const COLS =
+  "id, person, description, amount_cents, date, month, account_id, expense_id, received_at, installment_group, installment_no, installment_total, debtor_user_id, paid_claimed_at, disputed_at, dispute_note";
+
+/**
+ * Conta de quem deve, se o nome estiver ligado a uma pessoa conectada (person_links).
+ * O item passa a aparecer em "Devo" para ela e conta nos gastos dela no mês.
+ */
+export async function debtorFor(ctx: Ctx, person: string): Promise<number | null> {
+  const row = await ctx.db
+    .prepare(
+      `SELECT pl.linked_user_id FROM person_links pl
+       WHERE pl.user_id = ?1 AND pl.person_key = ?2
+         AND EXISTS (SELECT 1 FROM connections c WHERE c.user_a = MIN(?1, pl.linked_user_id) AND c.user_b = MAX(?1, pl.linked_user_id))`,
+    )
+    .bind(ctx.userId, personKey(person))
+    .first<{ linked_user_id: number }>();
+  return row?.linked_user_id ?? null;
+}
+
+/** Grafias usadas para a mesma pessoa ("jose", "José") nos seus devedores. */
+export async function spellingsOf(ctx: Ctx, key: string): Promise<string[]> {
+  const rows = await ctx.db.prepare("SELECT DISTINCT person FROM receivables WHERE user_id = ?").bind(ctx.userId).all<{ person: string }>();
+  return rows.results.map((r) => r.person).filter((p) => personKey(p) === key);
+}
 
 export { isDue };
 
@@ -75,14 +98,15 @@ export async function createReceivable(ctx: Ctx, input: z.input<typeof Receivabl
   const date = r.date ?? ctx.today;
   const account = r.account_id ? await mustGet<Account>(ctx, "accounts", r.account_id, "Conta") : null;
   const person = await canonicalPerson(ctx, r.person);
+  const debtor = await debtorFor(ctx, person);
   const n = r.installments ?? 1;
 
   if (n === 1) {
     const row = await ctx.db
       .prepare(
-        `INSERT INTO receivables (user_id, person, description, amount_cents, date, month, account_id) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+        `INSERT INTO receivables (user_id, person, description, amount_cents, date, month, account_id, debtor_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
       )
-      .bind(ctx.userId, person, r.description, r.amount_cents ?? r.total_cents!, date, r.month ?? referenceMonth(date, account), account?.id ?? null)
+      .bind(ctx.userId, person, r.description, r.amount_cents ?? r.total_cents!, date, r.month ?? referenceMonth(date, account), account?.id ?? null, debtor)
       .first<{ id: number }>();
     return [await getReceivable(ctx, row!.id)];
   }
@@ -105,10 +129,10 @@ export async function createReceivable(ctx: Ctx, input: z.input<typeof Receivabl
     stmts.push(
       ctx.db
         .prepare(
-          `INSERT INTO receivables (user_id, person, description, amount_cents, date, month, account_id, installment_group, installment_no, installment_total)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO receivables (user_id, person, description, amount_cents, date, month, account_id, installment_group, installment_no, installment_total, debtor_user_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
-        .bind(ctx.userId, person, r.description, amountOf(k), date, addMonths(firstMonth, k - 1), account?.id ?? null, group, k, n),
+        .bind(ctx.userId, person, r.description, amountOf(k), date, addMonths(firstMonth, k - 1), account?.id ?? null, group, k, n, debtor),
     );
   }
   await ctx.db.batch(stmts);
@@ -123,7 +147,16 @@ export async function createReceivable(ctx: Ctx, input: z.input<typeof Receivabl
 export async function updateReceivable(ctx: Ctx, id: number, patch: z.input<typeof ReceivablePatch>): Promise<Receivable> {
   const p = ReceivablePatch.parse(patch);
   if (p.account_id) await mustGet(ctx, "accounts", p.account_id, "Conta");
-  await updateRow(ctx, "receivables", id, p, ["person", "description", "amount_cents", "date", "month", "account_id", "received_at"]);
+  // Trocou a pessoa: o item passa a ser (ou deixa de ser) visível para a conta ligada ao novo nome
+  const debtor = p.person !== undefined ? { debtor_user_id: await debtorFor(ctx, p.person) } : {};
+  await updateRow(ctx, "receivables", id, { ...p, ...debtor }, ["person", "description", "amount_cents", "date", "month", "account_id", "received_at", "debtor_user_id"]);
+  return getReceivable(ctx, id);
+}
+
+/** Tira a contestação de um item (depois de conversar com a pessoa ou corrigir o valor). */
+export async function resolveDispute(ctx: Ctx, id: number): Promise<Receivable> {
+  await getReceivable(ctx, id);
+  await ctx.db.prepare("UPDATE receivables SET disputed_at = NULL, dispute_note = NULL WHERE id = ? AND user_id = ?").bind(id, ctx.userId).run();
   return getReceivable(ctx, id);
 }
 
@@ -168,10 +201,12 @@ export async function markReceived(
   } else throw new UserError("Informe ids ou pessoa");
   if (targets.length === 0) return [];
   const value = opts.undo ? null : (opts.date ?? ctx.today);
-  await ctx.db.batch(
-    targets.map((t) => ctx.db.prepare("UPDATE receivables SET received_at = ? WHERE id = ? AND user_id = ?").bind(value, t.id, ctx.userId)),
-  );
-  return targets.map((t) => ({ ...t, received_at: value }));
+  // Voltar para pendente também desfaz o "paguei" de quem deve (ele vale até você confirmar)
+  const sql = opts.undo
+    ? "UPDATE receivables SET received_at = NULL, paid_claimed_at = NULL WHERE id = ? AND user_id = ?"
+    : "UPDATE receivables SET received_at = ?, disputed_at = NULL, dispute_note = NULL WHERE id = ? AND user_id = ?";
+  await ctx.db.batch(targets.map((t) => (opts.undo ? ctx.db.prepare(sql).bind(t.id, ctx.userId) : ctx.db.prepare(sql).bind(value, t.id, ctx.userId))));
+  return targets.map((t) => ({ ...t, received_at: value, ...(opts.undo ? { paid_claimed_at: null } : { disputed_at: null, dispute_note: null }) }));
 }
 
 /** Pessoas que já apareceram, unindo variações de acento/maiúsculas ("jose" e "José") pela grafia mais usada. */

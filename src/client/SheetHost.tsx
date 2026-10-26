@@ -5,6 +5,7 @@ import { ExpenseForm } from "./forms/ExpenseForm";
 import { GoalDetail, GoalForm } from "./forms/GoalForms";
 import { IncomeForm } from "./forms/IncomeForm";
 import { InstallmentForm } from "./forms/InstallmentForm";
+import { PersonLinkForm } from "./forms/PersonLinkForm";
 import { ReceivableForm } from "./forms/ReceivableForm";
 import { RecurringForm } from "./forms/RecurringForm";
 import { EventForm } from "./modules/agenda/EventForm";
@@ -133,6 +134,12 @@ export function SheetHost() {
       return (
         <Sheet title="Editar devedor" onClose={closeSheet}>
           <ReceivableForm item={sheet.item} onDone={done} />
+        </Sheet>
+      );
+    case "person-link":
+      return (
+        <Sheet title={`Conta de ${sheet.person}`} onClose={closeSheet}>
+          <PersonLinkForm person={sheet.person} onDone={done} />
         </Sheet>
       );
     case "income":

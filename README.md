@@ -70,6 +70,15 @@ O LifeOS pode ser usado por pessoas convidadas (amigos, família), cada uma com 
 - **Perdeu o acesso** (celular novo sem a passkey sincronizada): o admin gera um link de recuperação na mesma tela, e a pessoa cadastra uma passkey nova.
 - **Desativar:** a pessoa sai de todos os aparelhos e não entra mais. Os dados dela ficam guardados.
 - **Primeiros passos:** quem acabou de entrar vê na tela Hoje o que falta configurar: cartões, salário e conector do Claude.
+- **Conexões:** quem convidou e quem entrou já ficam conectados. Para conectar outras pessoas, gere um link em **Ajustes → Conexões**.
+
+**Dívidas conectadas.** Em **Devedores**, use **ligar à conta** para ligar um nome (ex.: Ana) à conta de uma pessoa conectada. Daí em diante:
+
+- **"Devo":** tudo o que esse nome te deve, inclusive o histórico, aparece para ela na tela **Devo**. Os próximos lançamentos também, inclusive os de "dividir com" e os devedores parcelados.
+- **Gastos de quem deve:** a parte dela conta nos gastos do mês da sua fatura, na linha **Devo a pessoas**. O saldo acumulado dela usa a mesma regra.
+- **Pagamento:** ela marca **Paguei** e você vê "disse que pagou"; você confirma marcando como recebido. Ela também pode **contestar** com um motivo, e você marca a contestação como resolvida.
+- **Quem manda nos dados:** a linha continua sendo sua, sem cópias. Só você edita; ela não vê seus cartões nem os outros devedores.
+- **Desfazer:** desligar o nome ou desconectar faz os itens sumirem para ela; os valores continuam com você.
 
 ### Página dos devedores
 

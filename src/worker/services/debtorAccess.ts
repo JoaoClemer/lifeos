@@ -1,6 +1,6 @@
 import { type DebtorItem, type DebtorStatement, isDue, personKey } from "../../shared/receivables";
 import type { Ctx } from "../lib";
-import { listPeople } from "./receivables";
+import { listPeople, spellingsOf } from "./receivables";
 
 // Acesso de devedores: quem tem a variável DEBTOR_CODE_<NOME> (wrangler secret) aparece em /devedor
 // e, com o código, vê só os próprios valores.
@@ -46,9 +46,7 @@ type Row = DebtorItem & { installment_group: string | null };
 /** Tudo o que a pessoa deve (em aberto e parcelas futuras) e o que já pagou. Sem cartão, ids ou dados de outras pessoas. */
 export async function debtorStatement(ctx: Ctx, key: string, person: string): Promise<DebtorStatement> {
   // A mesma pessoa pode ter sido escrita de jeitos diferentes ("jose", "José"): junta todas as grafias
-  const spellings = (await ctx.db.prepare("SELECT DISTINCT person FROM receivables WHERE user_id = ?").bind(ctx.userId).all<{ person: string }>()).results
-    .map((r) => r.person)
-    .filter((p) => personKey(p) === key);
+  const spellings = await spellingsOf(ctx, key);
   const rows = spellings.length
     ? (
         await ctx.db

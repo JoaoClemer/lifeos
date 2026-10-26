@@ -1,4 +1,5 @@
-import { ChevronDown, HandCoins, Plus, Share2 } from "lucide-react";
+import { ChevronDown, HandCoins, Link2, Plus, Share2 } from "lucide-react";
+import type { Connection, PersonLink } from "../../shared/connections";
 import { useState } from "react";
 import { formatBRL } from "../../shared/money";
 import { formatDateBR, monthLabel } from "../../shared/month";
@@ -27,6 +28,9 @@ export function ReceivablesView() {
   const list = useData<Receivable[]>(`/api/receivables?status=${tab}`).data;
   // Quem tem código (DEBTOR_CODE_<NOME>) pode acompanhar os próprios valores em /devedor
   const withAccess = new Set((useData<string[]>("/api/receivables/access").data ?? []).map(personKey));
+  // Nomes ligados à conta de uma pessoa conectada (ela vê o que deve em "Devo")
+  const links = new Map((useData<PersonLink[]>("/api/person-links").data ?? []).map((l) => [l.person_key, l]));
+  const hasConnections = (useData<Connection[]>("/api/connections").data ?? []).length > 0;
   const accounts = new Map(useAccounts().map((a) => [a.id, a.name]));
   const { run } = useMutation();
 
@@ -72,6 +76,8 @@ export function ReceivablesView() {
           )}
           {r.account_id && <span>{accounts.get(r.account_id)}</span>}
           {r.received_at && <Badge tone="success">recebido {formatDateBR(r.received_at)}</Badge>}
+          {!r.received_at && r.paid_claimed_at && <Badge tone="warn">disse que pagou em {formatDateBR(r.paid_claimed_at)}</Badge>}
+          {!r.received_at && r.disputed_at && <Badge tone="danger">contestado</Badge>}
         </>
       }
       right={<Money cents={r.amount_cents} className="font-semibold" />}
@@ -135,8 +141,27 @@ export function ReceivablesView() {
                       </button>
                     )}
                   </p>
-                  <p className="text-sm text-muted">
+                  <p className="flex flex-wrap items-center gap-x-2 text-sm text-muted">
                     {g.items.length ? `${g.items.length} ${g.items.length === 1 ? "item" : "itens"}` : "nada vencido"}
+                    {links.get(personKey(g.person)) ? (
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline"
+                        onClick={() => openSheet({ kind: "person-link", person: g.person })}
+                      >
+                        <Link2 size={12} /> conta de {links.get(personKey(g.person))!.linked_name ?? "pessoa"}
+                      </button>
+                    ) : (
+                      hasConnections && (
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-muted hover:text-accent"
+                          onClick={() => openSheet({ kind: "person-link", person: g.person })}
+                        >
+                          <Link2 size={12} /> ligar à conta
+                        </button>
+                      )
+                    )}
                   </p>
                 </div>
                 <div className="text-right">
