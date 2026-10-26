@@ -13,6 +13,8 @@ self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET" || url.origin !== location.origin) return;
   if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/mcp")) return;
+  // A página dos devedores não faz parte do app (e não pode virar a "casca" offline dele)
+  if (url.pathname.startsWith("/devedor")) return;
   e.respondWith(
     fetch(e.request)
       .then((res) => {

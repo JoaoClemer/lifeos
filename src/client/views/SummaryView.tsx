@@ -4,7 +4,7 @@ import { addMonths, formatDateBR, monthLabel } from "../../shared/month";
 import type { Goal, Income, MonthBalance, Summary } from "../../shared/types";
 import { api } from "../api";
 import { useApp, useData, useMutation } from "../state";
-import { AccountIcon, Button, Card, CheckCircle, cx, Empty, List, Money, Progress, Row, Section } from "../ui";
+import { AccountIcon, Avatar, Button, Card, CheckCircle, cx, Empty, List, Money, Progress, Row, Section } from "../ui";
 
 export function SummaryView() {
   const { month, navigate, openSheet } = useApp();
@@ -345,15 +345,6 @@ function IncomeIcon() {
       <ArrowDownLeft size={18} />
     </span>
   );
-}
-
-export function Avatar({ name }: { name: string }) {
-  const initials = name
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase())
-    .join("");
-  return <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent-soft text-sm font-bold text-accent">{initials}</span>;
 }
 
 function Skeleton() {

@@ -367,6 +367,15 @@ export function AccountIcon({ type, size = 16 }: { type: AccountType | null; siz
   }
 }
 
+export function Avatar({ name }: { name: string }) {
+  const initials = name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase())
+    .join("");
+  return <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent-soft text-sm font-bold text-accent">{initials}</span>;
+}
+
 export function Badge({ children, tone = "neutral" }: { children: ReactNode; tone?: "neutral" | "accent" | "warn" | "danger" | "success" }) {
   const tones = {
     neutral: "bg-surface-2 text-muted",

@@ -7,6 +7,7 @@ import { todayRoutes } from "./modules/today/routes";
 import { trainingRoutes } from "./modules/training/routes";
 import * as accounts from "./services/accounts";
 import * as balance from "./services/balance";
+import { debtorCodes, peopleWithAccess } from "./services/debtorAccess";
 import * as expenses from "./services/expenses";
 import * as goals from "./services/goals";
 import * as incomes from "./services/incomes";
@@ -103,6 +104,8 @@ api.get("/receivables", async (c) => {
   );
 });
 api.get("/people", async (c) => c.json(await receivables.listPeople(ctxOf(c))));
+// Quem já pode acompanhar os próprios valores em /devedor (tem DEBTOR_CODE_<NOME> configurado)
+api.get("/receivables/access", async (c) => c.json((await peopleWithAccess(ctxOf(c), debtorCodes(c.env))).map((p) => p.name)));
 api.post("/receivables", async (c) => {
   const rows = await receivables.createReceivable(ctxOf(c), await c.req.json());
   // Mantém a resposta de antes (o devedor criado); parcelados devolvem a 1ª parcela + todas em `installments`
