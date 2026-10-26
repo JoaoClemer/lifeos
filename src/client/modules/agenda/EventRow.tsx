@@ -1,4 +1,4 @@
-import { Link2, MapPin, Repeat } from "lucide-react";
+import { Link2, MapPin, Repeat, Users } from "lucide-react";
 import type { AgendaItem } from "../../../shared/agenda";
 import { relativeDay, timeLabel } from "../../dates";
 import { useApp } from "../../state";
@@ -41,6 +41,16 @@ export function EventRow({ item, day, showDay }: { item: EventItem; day?: string
           {item.url && <Link2 size={13} aria-label="Tem link" />}
           {item.category && <span>{item.category}</span>}
           {item.task && <Badge tone="accent">Tarefa</Badge>}
+          {item.invite && (
+            <Badge tone={item.invite.status === "accepted" ? "neutral" : "accent"}>
+              {item.invite.status === "accepted" ? `de ${item.invite.owner_name ?? "pessoa"}` : `convite de ${item.invite.owner_name ?? "pessoa"}`}
+            </Badge>
+          )}
+          {item.participants > 0 && (
+            <span className="inline-flex items-center gap-1" aria-label={`${item.participants} convidado(s)`}>
+              <Users size={13} /> {item.participants}
+            </span>
+          )}
         </>
       }
       onClick={() => openSheet({ kind: "event", item })}

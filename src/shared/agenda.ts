@@ -44,6 +44,19 @@ export interface Occurrence {
   start_at: string;
   end_at: string;
   task_id: number | null;
+  /** Evento de outra pessoa para o qual você foi convidado(a) (null nos seus). Só quem criou altera. */
+  invite: { owner_id: number; owner_name: string | null; status: "invited" | "accepted" } | null;
+  /** Seus eventos: quantas pessoas foram convidadas (sem contar quem recusou). */
+  participants: number;
+}
+
+export type ParticipantStatus = "invited" | "accepted" | "declined";
+
+/** Convidado de um evento seu. */
+export interface Participant {
+  user_id: number;
+  name: string | null;
+  status: ParticipantStatus;
 }
 
 /** A quais ocorrências de uma série a alteração/exclusão se aplica. */
