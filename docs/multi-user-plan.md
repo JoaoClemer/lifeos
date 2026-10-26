@@ -384,3 +384,39 @@ Resultado: os 73 arquivos ficaram idênticos nos três snapshots. A página `/de
   - MCP de ponta a ponta.
 - 206 testes passando.
 
+### Fase 5: tarefas compartilhadas (26/10/2026)
+
+**O que mudou:**
+
+- **Migração `0014_shared_tasks.sql`:** `project_members` (entra em `OWNED_TABLES`) e `tasks.assignee_user_id`.
+- **Regra de acesso das tarefas, num lugar só (`taskAccess`).** Uma tarefa é vista e editada por:
+  - quem criou;
+  - a pessoa designada;
+  - quem vê a lista em que ela está (o dono ou os membros).
+- **Exclusão:** só quem criou a tarefa ou o dono da lista. A lista em si (alterar, membros, excluir) é só do dono.
+- **Subtarefas** herdam dono, lista e responsável da principal. Mudar a lista ou o responsável da principal leva as subtarefas junto. A próxima de uma tarefa que se repete copia a lista e o responsável.
+- **Listas gerais** (sem filtro de lista): deixam de fora as tarefas de listas compartilhadas designadas a outra pessoa, exceto as que você criou.
+- **Desconectar** agora também tira a pessoa de eventos, listas e designações entre as duas. Excluir a conta tira as designações.
+- **MCP:**
+  - `criar_tarefa` e `editar_tarefa` ganham `atribuir_a` (nome, "eu" ou "ninguém");
+  - `listar_tarefas` mostra "para …" e "de …";
+  - ferramenta nova `compartilhar_projeto`.
+- **Telas:**
+  - Responsável e projetos de outras pessoas no formulário da tarefa;
+  - Excluir escondido quando a tarefa não é sua;
+  - selos "para" e "de" na linha da tarefa;
+  - Compartilhar com (dono) ou "Lista de …" com Sair (membro) no formulário do projeto.
+
+**Testes:**
+
+- `test/modules/shared-tasks.test.ts` (7 casos):
+  - membros veem, criam, editam e concluem, e só quem pode exclui;
+  - só o dono altera a lista e os membros; sair; só pessoas conectadas;
+  - subtarefas e repetição dentro da lista;
+  - tarefa designada, inclusive para quem delegou;
+  - filtro das listas gerais;
+  - desconectar;
+  - MCP de ponta a ponta.
+- Os testes antigos de tarefas passaram sem mudança.
+- 213 testes passando.
+

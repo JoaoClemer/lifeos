@@ -81,8 +81,9 @@ export async function acceptConnectionLink(ctx: Ctx, input: unknown): Promise<Co
 }
 
 /**
- * Desfaz a conexão. Os nomes ligados entre as duas pessoas são desligados: as dívidas continuam com quem tem a receber,
- * mas deixam de aparecer para quem deve.
+ * Desfaz a conexão. O que estava compartilhado entre as duas pessoas deixa de estar:
+ * nomes ligados (as dívidas continuam com quem tem a receber), convites de eventos, participação nas listas
+ * e tarefas designadas de uma para a outra.
  */
 export async function removeConnection(ctx: Ctx, otherId: number): Promise<void> {
   await requireConnection(ctx, otherId);
@@ -93,6 +94,21 @@ export async function removeConnection(ctx: Ctx, otherId: number): Promise<void>
       .bind(ctx.userId, otherId),
     ctx.db
       .prepare("UPDATE receivables SET debtor_user_id = NULL WHERE (user_id = ?1 AND debtor_user_id = ?2) OR (user_id = ?2 AND debtor_user_id = ?1)")
+      .bind(ctx.userId, otherId),
+    ctx.db
+      .prepare(
+        `DELETE FROM event_participants WHERE (user_id = ?2 AND event_id IN (SELECT id FROM events WHERE user_id = ?1))
+           OR (user_id = ?1 AND event_id IN (SELECT id FROM events WHERE user_id = ?2))`,
+      )
+      .bind(ctx.userId, otherId),
+    ctx.db
+      .prepare(
+        `DELETE FROM project_members WHERE (user_id = ?2 AND project_id IN (SELECT id FROM projects WHERE user_id = ?1))
+           OR (user_id = ?1 AND project_id IN (SELECT id FROM projects WHERE user_id = ?2))`,
+      )
+      .bind(ctx.userId, otherId),
+    ctx.db
+      .prepare("UPDATE tasks SET assignee_user_id = NULL WHERE (user_id = ?1 AND assignee_user_id = ?2) OR (user_id = ?2 AND assignee_user_id = ?1)")
       .bind(ctx.userId, otherId),
   ]);
 }

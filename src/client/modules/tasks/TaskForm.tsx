@@ -1,6 +1,7 @@
 import { CalendarPlus, X } from "lucide-react";
 import { type KeyboardEvent, useState } from "react";
 import type { CalendarEvent } from "../../../shared/agenda";
+import type { Connection } from "../../../shared/connections";
 import { addDays, startOfWeek } from "../../../shared/datetime";
 import type { Project, Task, TaskPriority, TaskStatus } from "../../../shared/tasks";
 import { api } from "../../api";
@@ -13,7 +14,8 @@ import { Button, CheckCircle, Chips, cx, Field, TextArea, TextInput } from "../.
 const ESTIMATES = [15, 30, 60, 120, 240];
 
 export function TaskForm({ item, defaults, onDone }: { item?: Task; defaults?: Partial<Pick<Task, "due_date" | "project_id">>; onDone: () => void }) {
-  const { today, openSheet } = useApp();
+  const { today, openSheet, me } = useApp();
+  const connections = useData<Connection[]>("/api/connections").data ?? [];
   const { run, busy } = useMutation();
   const projects = (useData<Project[]>("/api/projects").data ?? []).filter((p) => p.status !== "done" || p.id === item?.project_id);
   const knownTags = useData<string[]>("/api/tasks/tags").data ?? [];
@@ -30,6 +32,7 @@ export function TaskForm({ item, defaults, onDone }: { item?: Task; defaults?: P
   const [estimate, setEstimate] = useState<number | null>(item?.estimate_minutes ?? null);
   const [tags, setTags] = useState((item?.tags ?? []).join(", "));
   const [repeat, setRepeat] = useState(() => initialRepeat(item?.rrule ?? null, item?.due_date ?? defaults?.due_date ?? today));
+  const [assignee, setAssignee] = useState<number | null>(item?.assignee?.id ?? null);
   const [pendingSubtasks, setPendingSubtasks] = useState<string[]>([]);
   const [subtaskDraft, setSubtaskDraft] = useState("");
 
@@ -46,7 +49,17 @@ export function TaskForm({ item, defaults, onDone }: { item?: Task; defaults?: P
     setDue(d);
   }
   // Tarefa que se repete precisa de prazo: sem um, começa hoje
-  const body = { title, notes: notes.trim() || null, due_date: rrule ? (due ?? today) : due, priority, project_id: projectId, estimate_minutes: estimate, tags: tagList, rrule };
+  const body = {
+    title,
+    notes: notes.trim() || null,
+    due_date: rrule ? (due ?? today) : due,
+    priority,
+    project_id: projectId,
+    estimate_minutes: estimate,
+    tags: tagList,
+    rrule,
+    ...(isSubtask ? {} : { assignee_user_id: assignee }),
+  };
   const valid = !!title.trim() && repeatValid(repeat);
 
   async function save() {
@@ -149,9 +162,28 @@ export function TaskForm({ item, defaults, onDone }: { item?: Task; defaults?: P
 
       {!isSubtask && projects.length > 0 && (
         <Field label="Projeto">
-          <Chips<number | null> options={[{ value: null, label: "Nenhum" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]} value={projectId} onChange={setProjectId} />
+          <Chips<number | null>
+            options={[{ value: null, label: "Nenhum" }, ...projects.map((p) => ({ value: p.id, label: p.owner ? `${p.name} (de ${p.owner.name ?? "pessoa"})` : p.name }))]}
+            value={projectId}
+            onChange={setProjectId}
+          />
         </Field>
       )}
+
+      {!isSubtask && connections.length > 0 && (
+        <Field label="Responsável" hint="A pessoa vê a tarefa na lista dela e pode editar e concluir.">
+          <Chips<number | null>
+            options={[
+              { value: null, label: "Ninguém" },
+              { value: me.id, label: "Eu" },
+              ...connections.map((c) => ({ value: c.user_id, label: c.name ?? "Pessoa" })),
+            ]}
+            value={assignee}
+            onChange={setAssignee}
+          />
+        </Field>
+      )}
+      {item?.owner && <p className="text-sm text-muted">Tarefa criada por {item.owner.name ?? "pessoa conectada"}.</p>}
 
       <Field label="Tempo estimado">
         <Chips<number | null>
@@ -220,7 +252,7 @@ export function TaskForm({ item, defaults, onDone }: { item?: Task; defaults?: P
         </Field>
       )}
 
-      <FormFooter onSave={save} busy={busy} disabled={!valid} onDelete={item ? remove : undefined} saveLabel={item ? "Salvar" : "Criar tarefa"} />
+      <FormFooter onSave={save} busy={busy} disabled={!valid} onDelete={item?.can_delete ? remove : undefined} saveLabel={item ? "Salvar" : "Criar tarefa"} />
     </div>
   );
 }
