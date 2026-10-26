@@ -167,6 +167,17 @@ api.post("/goals/:id/check", async (c) => {
   const body = await c.req.json<{ month?: string; amount_cents?: number }>().catch(() => ({}) as { month?: string; amount_cents?: number });
   return c.json(await goals.checkGoalMonth(ctx, idParam(c.req.param("id")), monthQuery(body.month, ctx.month), body.amount_cents));
 });
+// Meta em conjunto: quem participa (só quem criou define), sair e o seu aporte mensal
+api.put("/goals/:id/members", async (c) => {
+  const { user_ids } = await c.req.json<{ user_ids?: unknown }>();
+  if (!Array.isArray(user_ids) || !user_ids.every((u) => Number.isInteger(u))) throw new UserError("user_ids deve ser uma lista de ids");
+  return c.json(await goals.setGoalMembers(ctxOf(c), idParam(c.req.param("id")), user_ids as number[]));
+});
+api.post("/goals/:id/leave", async (c) => {
+  await goals.leaveGoal(ctxOf(c), idParam(c.req.param("id")));
+  return c.json({ ok: true });
+});
+api.put("/goals/:id/my-plan", async (c) => c.json(await goals.setMyPlan(ctxOf(c), idParam(c.req.param("id")), await c.req.json())));
 api.delete("/goal-entries/:id", async (c) => {
   await goals.deleteGoalEntry(ctxOf(c), idParam(c.req.param("id")));
   return c.json({ ok: true });

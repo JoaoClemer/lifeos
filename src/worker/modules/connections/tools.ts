@@ -1,10 +1,11 @@
 // Ferramentas MCP de dívidas conectadas: o que você deve a pessoas conectadas e a ligação de um devedor à conta dele.
 import { z } from "zod";
 import { debtStatus, type Payable } from "../../../shared/connections";
-import { formatBRL as brl } from "../../../shared/money";
+import { formatBRL as brl, toCents } from "../../../shared/money";
 import { formatDateBR, monthLabel } from "../../../shared/month";
 import type { Ctx } from "../../lib";
 import { type Tool, tool } from "../../mcp/tool";
+import * as goals from "../../services/goals";
 import * as payables from "../../services/payables";
 import * as receivables from "../../services/receivables";
 import * as connections from "./service";
@@ -108,6 +109,43 @@ export const DEBT_TOOLS: Tool[] = [
       const target = await connections.resolveConnection(ctx, a.conta ?? person);
       const link = await connections.linkPerson(ctx, { person, user_id: target.user_id });
       return `🔗 ${person} ligado(a) à conta de ${link.linked_name ?? "pessoa conectada"}. O que ${person} te deve aparece agora em "Devo" para essa pessoa.`;
+    },
+  }),
+
+  tool({
+    name: "compartilhar_meta",
+    title: "Meta em conjunto",
+    description:
+      "Compartilha uma meta (caixinha) com pessoas conectadas, para juntarem dinheiro (ex.: viagem de casal). O saldo é de todos; " +
+      "cada um tem o próprio aporte mensal, e no resumo de cada um entram só os aportes dele. Use adicionar/remover com nomes (só quem criou a meta), " +
+      "meu_aporte_mensal (em reais) para definir o seu aporte, ou sair: true para sair de uma meta de outra pessoa.",
+    schema: z.object({
+      meta: z.string(),
+      adicionar: z.array(z.string()).optional(),
+      remover: z.array(z.string()).optional(),
+      meu_aporte_mensal: z.number().nonnegative().optional().describe("Seu aporte mensal planejado em reais (0 para nenhum)"),
+      sair: z.boolean().optional(),
+    }),
+    async run(a, ctx) {
+      const g = await goals.resolveGoal(ctx, a.meta);
+      if (a.sair) {
+        await goals.leaveGoal(ctx, g.id);
+        return `Você saiu da meta "${g.name}". Seus aportes continuam no saldo dela.`;
+      }
+      const out: string[] = [];
+      if (a.adicionar?.length || a.remover?.length) {
+        const ids = async (names?: string[]) => Promise.all((names ?? []).map(async (n) => (await connections.resolveConnection(ctx, n)).user_id));
+        const remove = new Set(await ids(a.remover));
+        const current = g.members.filter((p) => p.role === "member").map((p) => p.id);
+        const updated = await goals.setGoalMembers(ctx, g.id, [...new Set([...current, ...(await ids(a.adicionar))])].filter((id) => !remove.has(id)));
+        const names = updated.members.filter((p) => p.role === "member").map((p) => p.name ?? "pessoa");
+        out.push(names.length ? `🔗 "${g.name}" em conjunto com: ${names.join(", ")}.` : `"${g.name}" não está compartilhada com ninguém.`);
+      }
+      if (a.meu_aporte_mensal !== undefined) {
+        const updated = await goals.setMyPlan(ctx, g.id, { monthly_cents: a.meu_aporte_mensal ? toCents(a.meu_aporte_mensal) : null });
+        out.push(updated.monthly_cents ? `Seu aporte mensal em "${g.name}": ${brl(updated.monthly_cents)}.` : `Sem aporte mensal planejado em "${g.name}".`);
+      }
+      return out.join("\n") || "Nada para alterar: informe adicionar, remover, meu_aporte_mensal ou sair.";
     },
   }),
 ];

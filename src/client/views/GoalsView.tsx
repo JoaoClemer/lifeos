@@ -59,7 +59,13 @@ export function GoalsView() {
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="truncate font-semibold">{g.name}</p>
-                      {g.institution && <p className="truncate text-sm text-muted">{g.institution}</p>}
+                      {(g.institution || g.members.length > 0) && (
+                        <p className="truncate text-sm text-muted">
+                          {[g.institution, g.owner ? `meta de ${g.owner.name ?? "pessoa"}` : g.members.length ? `com ${g.members.filter((m) => m.role === "member").map((m) => m.name ?? "pessoa").join(", ")}` : null]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </p>
+                      )}
                     </div>
                     {g.month_planned_cents > 0 && (
                       <span className="pointer-events-auto">

@@ -420,3 +420,55 @@ Resultado: os 73 arquivos ficaram idênticos nos três snapshots. A página `/de
 - Os testes antigos de tarefas passaram sem mudança.
 - 213 testes passando.
 
+### Fase 6: metas em conjunto (26/10/2026)
+
+**O que mudou:**
+
+- **Migração `0015_joint_goals.sql`:** `goal_members`, com o aporte mensal de cada pessoa. Entra em `OWNED_TABLES`.
+- **Quem vê a meta:** o dono e os membros.
+  - `monthly_cents` é o seu aporte (o do dono fica em `goals`; o dos membros, em `goal_members`).
+  - `balance_cents` soma as movimentações de todos; `month_contrib_cents` são só os seus aportes.
+  - `members` lista cada pessoa, com o aporte planejado e o aporte do mês.
+- **`decorateGoal`** recebe os valores do grupo (aporte planejado e aportes do mês de todos) para a previsão e para "quanto ainda faltava no início do mês".
+  - O aporte planejado continua sendo o seu.
+  - Numa meta só sua, o grupo é você, e os números ficam idênticos aos de antes.
+  - `balance.ts` usa a mesma regra; o teste de concordância entre resumo e saldo acumulado roda para quem criou e para quem participa.
+- **Permissões:** só quem criou altera, exclui e define os membros (só pessoas conectadas). Quem participa ajusta o próprio aporte (`/my-plan`) e pode sair. Cada um exclui só as próprias movimentações.
+- **Desconectar** tira a pessoa das metas um do outro. Excluir a conta apaga as movimentações da pessoa, inclusive em metas de outras.
+- **MCP:** `listar_metas` mostra "em conjunto" (só nas metas compartilhadas, então as saídas atuais não mudam). Ferramenta nova `compartilhar_meta`.
+- **Telas:**
+  - "Em conjunto com" no formulário da meta;
+  - no detalhe: quem participa, o seu aporte, Sair, e o autor de cada movimentação;
+  - no card: "meta de …" ou "com …".
+
+**Testes:**
+
+- `test/modules/joint-goals.test.ts` (6 casos):
+  - saldo de todos, aporte de cada um e previsão com o ritmo somado;
+  - resumo e saldo acumulado batendo para quem criou e para quem participa;
+  - permissões e só pessoas conectadas;
+  - sair e desconectar;
+  - metas antigas iguais;
+  - MCP.
+- 219 testes passando.
+
+### Ensaio de release das fases 2 a 6 (26/10/2026)
+
+**Passos, com uma cópia da produção exportada no dia (até a 0010):**
+
+1. Snapshot da API e do MCP com o código no ar (`main`).
+2. Migrações 0011 a 0015 aplicadas na cópia.
+3. Snapshot com o código no ar sobre o banco migrado: **idêntico**, então o rollback é seguro.
+4. Snapshot com o código da fase 6. O resultado:
+   - **textos do MCP** (resumos, listas, agenda etc.): idênticos; só a lista de ferramentas ganhou as ferramentas e os parâmetros novos;
+   - **JSON da API:** a diferença são só os campos novos, todos vazios ou zerados para o dono (`owner`, `members`, `debtor_user_id`, `paid_claimed_at`, `disputed_at`, `dispute_note`, `payables_month_cents`, `payable_pending_cents`, `owed_by_person`).
+
+**Deploy**, depois do merge dos PRs #12 a #16, em ordem:
+
+1. `npx wrangler secret put SESSION_SECRET` (valor de `openssl rand -hex 32`).
+2. Exportar o banco de produção.
+3. `npm run db:migrate:remote` (0011 a 0015).
+4. `npm run deploy`.
+5. Comparar o `resumo_mes`.
+6. O dono cadastra a passkey em Ajustes e convida a primeira pessoa.
+

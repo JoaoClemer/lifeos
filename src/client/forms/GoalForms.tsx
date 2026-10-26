@@ -1,5 +1,6 @@
-import { ArrowDownLeft, ArrowUpRight, Pencil, RefreshCw, X } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, LogOut, Pencil, RefreshCw, X } from "lucide-react";
 import { useState } from "react";
+import { PeoplePicker } from "../PeoplePicker";
 import { formatBRL } from "../../shared/money";
 import { formatDateBR, monthLabel } from "../../shared/month";
 import type { Goal, GoalEntry } from "../../shared/types";
@@ -17,6 +18,9 @@ export function GoalForm({ item, onDone }: { item?: Goal; onDone: () => void }) 
   const [target, setTarget] = useState<number | null>(item?.target_cents ?? null);
   const [monthly, setMonthly] = useState<number | null>(item?.monthly_cents ?? null);
   const [deadline, setDeadline] = useState<string | null>(item?.deadline ?? null);
+  // Meta em conjunto: pessoas conectadas que juntam dinheiro com você (cada uma define o próprio aporte)
+  const originalPeople = (item?.members ?? []).filter((m) => m.role === "member").map((m) => m.id);
+  const [people, setPeople] = useState<number[]>(originalPeople);
 
   const remaining = target != null ? Math.max(target - (item?.balance_cents ?? initial ?? 0), 0) : null;
 
@@ -29,9 +33,11 @@ export function GoalForm({ item, onDone }: { item?: Goal; onDone: () => void }) 
       monthly_cents: monthly || null,
       deadline,
     };
-    const ok = item
-      ? await run(() => api.patch(`/api/goals/${item.id}`, body), "Meta atualizada")
-      : await run(() => api.post("/api/goals", { ...body, initial_cents: initial ?? 0 }), "Meta criada");
+    const ok = await run(async () => {
+      const g = item ? await api.patch<Goal>(`/api/goals/${item.id}`, body) : await api.post<Goal>("/api/goals", { ...body, initial_cents: initial ?? 0 });
+      if (JSON.stringify([...people].sort()) !== JSON.stringify([...originalPeople].sort())) await api.put(`/api/goals/${g.id}/members`, { user_ids: people });
+      return g;
+    }, item ? "Meta atualizada" : "Meta criada");
     if (ok) onDone();
   }
 
@@ -78,6 +84,10 @@ export function GoalForm({ item, onDone }: { item?: Goal; onDone: () => void }) 
           ) : null}
         </div>
       )}
+      <Field label="Em conjunto com" hint="O saldo é de todos; cada pessoa define o próprio aporte mensal e, no resumo dela, entram só os aportes dela.">
+        <PeoplePicker value={people} onChange={setPeople} />
+      </Field>
+
       <FormFooter onSave={save} busy={busy} disabled={!name.trim()} onDelete={item ? remove : undefined} saveLabel={item ? "Salvar" : "Criar meta"} />
     </div>
   );
@@ -99,8 +109,10 @@ export function GoalDetail({ id, onEdit }: { id: number; onEdit: (g: Goal) => vo
   const [action, setAction] = useState<"contribution" | "withdrawal" | "balance">("contribution");
   const [amount, setAmount] = useState<number | null>(null);
   const [date, setDate] = useState(today);
+  const [plan, setPlan] = useState<number | null | undefined>(undefined);
 
   if (!goal) return <p className="py-8 text-center text-muted">Carregando…</p>;
+  const myPlan = plan === undefined ? goal.monthly_cents : plan;
 
   // Sem valor digitado, o aporte usa o valor mensal planejado
   const value = amount ?? (action === "contribution" ? goal.monthly_cents : null);
@@ -125,9 +137,11 @@ export function GoalDetail({ id, onEdit }: { id: number; onEdit: (g: Goal) => vo
             <p className="num text-3xl font-bold">{formatBRL(goal.balance_cents)}</p>
             {goal.institution && <p className="text-sm text-muted">{goal.institution}</p>}
           </div>
-          <Button variant="secondary" onClick={() => onEdit(goal)} className="h-9 px-3 text-sm">
-            <Pencil size={15} /> Editar
-          </Button>
+          {!goal.owner && (
+            <Button variant="secondary" onClick={() => onEdit(goal)} className="h-9 px-3 text-sm">
+              <Pencil size={15} /> Editar
+            </Button>
+          )}
         </div>
         {goal.target_cents ? (
           <>
@@ -140,6 +154,49 @@ export function GoalDetail({ id, onEdit }: { id: number; onEdit: (g: Goal) => vo
           </>
         ) : null}
       </div>
+
+      {goal.members.length > 0 && (
+        <div className="space-y-2 rounded-2xl border border-border p-3">
+          <p className="text-sm font-semibold">{goal.owner ? `Meta de ${goal.owner.name ?? "pessoa conectada"}, em conjunto` : "Em conjunto"}</p>
+          <ul className="space-y-1 text-sm">
+            {goal.members.map((m) => (
+              <li key={m.id} className="flex justify-between gap-3">
+                <span>{m.name ?? "Pessoa"}</span>
+                <span className="num text-muted">
+                  {formatBRL(m.month_contrib_cents)} no mês{m.monthly_cents ? ` de ${formatBRL(m.monthly_cents)}` : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {goal.owner && (
+            <div className="space-y-2 border-t border-border pt-2">
+              <Field label="Seu aporte mensal">
+                <div className="flex gap-2">
+                  <MoneyInput value={myPlan} onChange={setPlan} />
+                  <Button
+                    variant="secondary"
+                    className="shrink-0"
+                    disabled={busy || myPlan === goal.monthly_cents}
+                    onClick={async () => (await run(() => api.put(`/api/goals/${goal.id}/my-plan`, { monthly_cents: myPlan || null }), "Aporte mensal salvo")) && setPlan(undefined)}
+                  >
+                    Salvar
+                  </Button>
+                </div>
+              </Field>
+              <Button
+                variant="ghost"
+                className="h-8 px-2 text-sm text-danger"
+                disabled={busy}
+                onClick={() =>
+                  window.confirm(`Sair da meta "${goal.name}"? Seus aportes continuam no saldo dela.`) && run(() => api.post(`/api/goals/${goal.id}/leave`), "Você saiu da meta")
+                }
+              >
+                <LogOut size={15} /> Sair da meta
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="space-y-3 rounded-2xl border border-border p-3">
         <Segmented
@@ -176,20 +233,27 @@ export function GoalDetail({ id, onEdit }: { id: number; onEdit: (g: Goal) => vo
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium">{e.note || ENTRY_LABEL[e.kind]}</p>
-                  <p className="text-xs text-muted">{formatDateBR(e.date)}</p>
+                  <p className="text-xs text-muted">
+                    {formatDateBR(e.date)}
+                    {e.author && ` · por ${e.author}`}
+                  </p>
                 </div>
                 <span className={cx("num text-sm font-semibold", e.amount_cents >= 0 ? "text-success" : "text-danger")}>
                   {e.amount_cents >= 0 ? "+" : "−"}
                   {formatBRL(Math.abs(e.amount_cents))}
                 </span>
-                <button
-                  type="button"
-                  aria-label="Excluir movimentação"
-                  className="p-1 text-muted hover:text-danger"
-                  onClick={() => confirmDelete("esta movimentação") && run(() => api.del(`/api/goal-entries/${e.id}`), "Movimentação excluída")}
-                >
-                  <X size={16} />
-                </button>
+                {e.mine ? (
+                  <button
+                    type="button"
+                    aria-label="Excluir movimentação"
+                    className="p-1 text-muted hover:text-danger"
+                    onClick={() => confirmDelete("esta movimentação") && run(() => api.del(`/api/goal-entries/${e.id}`), "Movimentação excluída")}
+                  >
+                    <X size={16} />
+                  </button>
+                ) : (
+                  <span className="w-6" />
+                )}
               </li>
             ))}
           </ul>
