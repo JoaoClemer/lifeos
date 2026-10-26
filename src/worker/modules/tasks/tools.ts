@@ -6,6 +6,7 @@ import type { Ctx } from "../../lib";
 import { describeRRule, parseRRule } from "../../../shared/recurrence";
 import { confirmArg, dateArg, dayLabel, needsConfirmation, repeatArg, toDate, toRRule } from "../../mcp/args";
 import { type Tool, tool } from "../../mcp/tool";
+import { resolveConnection } from "../connections/service";
 import * as tasks from "./service";
 
 const PRIORITY: Record<string, TaskPriority> = { baixa: "low", media: "medium", alta: "high" };
@@ -25,6 +26,15 @@ async function findTask(ctx: Ctx, v: string): Promise<Task> {
   }
 }
 
+/** Pessoa designada: "eu", "ninguém"/"" (null) ou o nome de uma pessoa conectada. */
+async function assigneeId(ctx: Ctx, name: string | undefined): Promise<number | null | undefined> {
+  if (name === undefined) return undefined;
+  const n = name.trim().toLowerCase();
+  if (n === "" || n === "ninguem" || n === "ninguém") return null;
+  if (n === "eu" || n === "mim") return ctx.userId;
+  return (await resolveConnection(ctx, name)).user_id;
+}
+
 async function projectId(ctx: Ctx, name: string | null | undefined): Promise<number | null | undefined> {
   if (name === undefined) return undefined;
   if (name === null || name === "") return null;
@@ -40,6 +50,8 @@ export function taskLine(t: Task, today: string): string {
   if (t.status === "done") parts.push(`concluída${t.completed_at ? ` em ${t.completed_at.replace("T", " ")}` : ""}`);
   if (t.subtasks_total) parts.push(`subtarefas ${t.subtasks_done}/${t.subtasks_total}`);
   if (t.tags.length) parts.push(t.tags.map((x) => `#${x}`).join(" "));
+  if (t.assignee) parts.push(`para ${t.assignee.name ?? "pessoa conectada"}`);
+  if (t.owner) parts.push(`de ${t.owner.name ?? "pessoa conectada"}`);
   return `• ${parts.join(" · ")}`;
 }
 
@@ -93,6 +105,7 @@ export const TASK_TOOLS: Tool[] = [
       notas: z.string().optional(),
       subtarefas: z.array(z.string().min(1)).optional(),
       repetir: repeatArg.optional().describe("Repetição da tarefa (sem 'vezes': termina numa data com 'ate')"),
+      atribuir_a: z.string().optional().describe('Pessoa conectada responsável pela tarefa (ou "eu")'),
     }),
     async run(a, ctx) {
       const existing = await tasks.findRecentTask(ctx, a.titulo);
@@ -106,6 +119,7 @@ export const TASK_TOOLS: Tool[] = [
         estimate_minutes: a.estimativa_min ?? null,
         notes: a.notas ?? null,
         rrule: a.repetir ? toRRule(ctx, a.repetir) : null,
+        assignee_user_id: await assigneeId(ctx, a.atribuir_a),
       });
       for (const s of a.subtarefas ?? []) await tasks.createTask(ctx, { title: s, parent_id: t.id });
       return `✅ Tarefa criada:\n${taskLine(await tasks.getTask(ctx, t.id), ctx.today)}`;
@@ -149,6 +163,7 @@ export const TASK_TOOLS: Tool[] = [
       notas: z.string().optional(),
       repetir: repeatArg.optional(),
       parar_de_repetir: z.boolean().optional(),
+      atribuir_a: z.string().optional().describe('Pessoa conectada responsável, "eu" ou "ninguém"'),
     }),
     async run(a, ctx) {
       const t = await findTask(ctx, a.tarefa);
@@ -162,6 +177,7 @@ export const TASK_TOOLS: Tool[] = [
         tags: a.etiquetas,
         estimate_minutes: a.estimativa_min,
         notes: a.notas,
+        assignee_user_id: await assigneeId(ctx, a.atribuir_a),
       });
       return `✅ Tarefa atualizada (${TASK_STATUS_LABEL[u.status].toLowerCase()}):\n${taskLine(u, ctx.today)}`;
     },
@@ -189,6 +205,33 @@ export const TASK_TOOLS: Tool[] = [
     async run(a, ctx) {
       const p = await tasks.createProject(ctx, { name: a.nome, due_date: a.prazo ? toDate(ctx, a.prazo) : null, description: a.descricao ?? null });
       return `✅ Projeto criado [projeto ${p.id}]: ${p.name}`;
+    },
+  }),
+
+  tool({
+    name: "compartilhar_projeto",
+    title: "Compartilhar lista de tarefas",
+    description:
+      "Compartilha um projeto (lista de tarefas) com pessoas conectadas: elas veem e editam as tarefas dele. " +
+      "Use adicionar e/ou remover com nomes. Só quem criou o projeto pode compartilhar. Para sair de uma lista de outra pessoa, use sair: true.",
+    schema: z.object({
+      projeto: z.string(),
+      adicionar: z.array(z.string()).optional(),
+      remover: z.array(z.string()).optional(),
+      sair: z.boolean().optional(),
+    }),
+    async run(a, ctx) {
+      const p = await tasks.resolveProject(ctx, a.projeto);
+      if (a.sair) {
+        await tasks.leaveProject(ctx, p.id);
+        return `Você saiu da lista "${p.name}". Suas tarefas nela continuam suas.`;
+      }
+      const current = (await tasks.listProjectMembers(ctx, p.id)).filter((m) => m.role === "member").map((m) => m.id);
+      const ids = async (names?: string[]) => Promise.all((names ?? []).map(async (n) => (await resolveConnection(ctx, n)).user_id));
+      const remove = new Set(await ids(a.remover));
+      const members = await tasks.setProjectMembers(ctx, p.id, [...new Set([...current, ...(await ids(a.adicionar))])].filter((id) => !remove.has(id)));
+      const names = members.filter((m) => m.role === "member").map((m) => m.name ?? "pessoa");
+      return names.length ? `🔗 "${p.name}" compartilhada com: ${names.join(", ")}.` : `"${p.name}" não está compartilhada com ninguém.`;
     },
   }),
 ];

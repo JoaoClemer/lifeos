@@ -50,6 +50,7 @@ describe("catálogo", () => {
       "editar_tarefa",
       "remover_tarefa",
       "criar_projeto",
+      "compartilhar_projeto",
       "treinos_semana",
       "planejar_treino",
       "registrar_treino",

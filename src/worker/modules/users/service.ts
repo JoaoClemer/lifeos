@@ -216,6 +216,8 @@ export async function deleteMyAccount(ctx: Ctx, input: unknown): Promise<void> {
     ...OWNED_TABLES.map((t) => ctx.db.prepare(`DELETE FROM ${t} WHERE user_id = ?`).bind(ctx.userId)),
     // O que a pessoa devia a outras continua com quem tem a receber, só deixa de estar ligado a ela
     ctx.db.prepare("UPDATE receivables SET debtor_user_id = NULL WHERE debtor_user_id = ?").bind(ctx.userId),
+    // Tarefas de outras pessoas designadas a ela ficam sem ninguém designado
+    ctx.db.prepare("UPDATE tasks SET assignee_user_id = NULL WHERE assignee_user_id = ?").bind(ctx.userId),
     // passkeys, conectores, convites, conexões e nomes ligados a ela saem junto (ON DELETE CASCADE)
     ctx.db.prepare("DELETE FROM users WHERE id = ?").bind(ctx.userId),
   ]);

@@ -32,3 +32,14 @@ tasksRoutes.get("/projects", async (c) => c.json(await tasks.listProjects(ctxOf(
 tasksRoutes.post("/projects", async (c) => c.json(await tasks.createProject(ctxOf(c), await c.req.json()), 201));
 tasksRoutes.patch("/projects/:id", async (c) => c.json(await tasks.updateProject(ctxOf(c), idParam(c.req.param("id")), await c.req.json())));
 tasksRoutes.delete("/projects/:id", async (c) => c.json(await tasks.deleteProject(ctxOf(c), idParam(c.req.param("id")))));
+// Lista compartilhada: membros (o dono define; quem participa pode sair)
+tasksRoutes.get("/projects/:id/members", async (c) => c.json(await tasks.listProjectMembers(ctxOf(c), idParam(c.req.param("id")))));
+tasksRoutes.put("/projects/:id/members", async (c) => {
+  const { user_ids } = await c.req.json<{ user_ids?: unknown }>();
+  if (!Array.isArray(user_ids) || !user_ids.every((u) => Number.isInteger(u))) throw new UserError("user_ids deve ser uma lista de ids");
+  return c.json(await tasks.setProjectMembers(ctxOf(c), idParam(c.req.param("id")), user_ids as number[]));
+});
+tasksRoutes.post("/projects/:id/leave", async (c) => {
+  await tasks.leaveProject(ctxOf(c), idParam(c.req.param("id")));
+  return c.json({ ok: true });
+});

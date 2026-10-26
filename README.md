@@ -88,6 +88,17 @@ O LifeOS pode ser usado por pessoas convidadas (amigos, família), cada uma com 
 - Só quem criou edita, e a tarefa ligada ao evento não é compartilhada.
 - Pelo Claude: `criar_evento` com `convidar`, `editar_evento` com `convidar` e `desconvidar`, e `responder_convite`.
 
+**Tarefas compartilhadas.**
+
+- **Lista compartilhada:** no projeto, use **Compartilhar com** para escolher pessoas conectadas. Elas veem a lista e todas as tarefas dela, e podem criar, editar e concluir.
+- **O que é só do dono:** alterar a lista, mudar quem participa e excluí-la. Uma tarefa só é excluída por quem a criou ou pelo dono da lista.
+- **Sair da lista:** quem participa pode sair; as tarefas que essa pessoa criou continuam dela.
+- **Responsável:** designa a tarefa a você ou a alguém conectado. A pessoa vê a tarefa na lista dela e pode editar e concluir.
+- **O que aparece em "suas tarefas":** numa lista compartilhada, as tarefas designadas a outra pessoa só aparecem para você ao filtrar pela lista (a não ser que você as tenha criado).
+- **Subtarefas e repetição:** subtarefas seguem a tarefa principal (mesma lista e responsável), e a próxima de uma tarefa que se repete continua na lista.
+- **Desconectar** duas pessoas tira cada uma das listas, eventos e tarefas designadas da outra.
+- **Pelo Claude:** `criar_tarefa` e `editar_tarefa` com `atribuir_a`, e `compartilhar_projeto` (adicionar, remover ou sair).
+
 ### Página dos devedores
 
 Quem te deve pode acompanhar os próprios valores em `https://financas.<seu-subdominio>.workers.dev/devedor`: a pessoa escolhe o nome, digita o código dela e vê o que está em aberto, as próximas parcelas e o que já pagou. Ela não vê cartões, outras pessoas nem nada do resto do app.

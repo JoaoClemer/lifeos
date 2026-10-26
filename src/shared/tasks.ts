@@ -30,6 +30,22 @@ export interface Task {
   updated_at: string;
   subtasks_total: number;
   subtasks_done: number;
+  /** Quem criou, quando não foi você (tarefa de uma lista compartilhada ou designada a você). */
+  owner: PersonRef | null;
+  /** Pessoa designada para a tarefa (null = ninguém). */
+  assignee: PersonRef | null;
+  /** Você pode excluir: criou a tarefa ou é dono(a) da lista. */
+  can_delete: boolean;
+}
+
+export interface PersonRef {
+  id: number;
+  name: string | null;
+}
+
+/** Membro de uma lista (projeto) compartilhada. */
+export interface ProjectMember extends PersonRef {
+  role: "owner" | "member";
 }
 
 export interface Project {
@@ -41,6 +57,10 @@ export interface Project {
   color: string | null;
   open_count: number;
   done_count: number;
+  /** Dono(a) da lista, quando não é você (você é membro). */
+  owner: PersonRef | null;
+  /** Quantas pessoas, além do dono, participam da lista. */
+  members: number;
 }
 
 const PRIORITY_RANK: Record<TaskPriority, number> = { high: 0, medium: 1, low: 2 };

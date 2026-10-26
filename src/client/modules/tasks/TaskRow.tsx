@@ -17,7 +17,7 @@ export function useToggleTask() {
 }
 
 export function TaskRow({ task, projects, hideDue }: { task: Task; projects?: Map<number, Project>; hideDue?: boolean }) {
-  const { today, openSheet } = useApp();
+  const { today, openSheet, me } = useApp();
   const toggle = useToggleTask();
   const done = task.status === "done";
   const overdue = !done && !!task.due_date && task.due_date < today;
@@ -52,6 +52,8 @@ export function TaskRow({ task, projects, hideDue }: { task: Task; projects?: Ma
           {task.tags.map((t) => (
             <span key={t}>#{t}</span>
           ))}
+          {task.assignee && task.assignee.id !== me.id && <Badge tone="accent">para {task.assignee.name ?? "pessoa"}</Badge>}
+          {task.owner && <Badge>de {task.owner.name ?? "pessoa"}</Badge>}
         </>
       }
       onClick={() => openSheet({ kind: "task", item: task })}
