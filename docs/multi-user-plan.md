@@ -217,3 +217,56 @@ As fases 4, 5 e 6 são independentes entre si e podem mudar de ordem.
 5. Em listas de tarefas compartilhadas, **todos os membros editam**. Em eventos, só quem criou edita.
 6. Você, como admin, tem acesso técnico a todos os dados, e isso fica explícito no convite.
 7. `/devedor` continua para quem não quer conta. Quem vira usuário deixa de precisar do código.
+
+## 9. Registro de execução
+
+### Fase 1: base multiusuário (26/10/2026)
+
+**O que mudou:**
+
+- **Migração `0010_users_and_owners.sql`, aditiva:**
+  - tabela `users`, com a pessoa 1 como admin;
+  - `user_id INTEGER NOT NULL DEFAULT 1` nas 14 tabelas com dados;
+  - índices começando por `user_id`;
+  - `user_settings` e `user_month_balances`, com cópia dos dados de `settings` e `month_balances`. As antigas ficam paradas, para rollback.
+- **`Ctx.userId`:** vem só da autenticação (`AppEnv` do Hono). `makeCtx` sem pessoa falha.
+- **Acessos atuais ligados à pessoa 1** (`OWNER_USER_ID`): `APP_PASSWORD`, `MCP_TOKEN` e os códigos `DEBTOR_CODE_*`.
+- **Consultas:** as 102 consultas filtram por `user_id`, e todo `INSERT` grava o dono.
+  - `mustGet` e `updateRow` aplicam o dono sozinhos.
+  - Referências a outras linhas no corpo da requisição (conta, orçamento, projeto, tarefa-mãe, tarefa do evento, conta padrão) são validadas como da mesma pessoa.
+  - Subconsultas também comparam `user_id`.
+- **Backup:** exporta só os dados da pessoa (versão 5).
+- **`/api/receivables/access`:** só responde para o dono. Os códigos de devedor são dele.
+
+**Testes:**
+
+- Trava de dono em todos os testes (`test/ownerGuard.ts`).
+- Teste de isolamento (`test/isolation.test.ts`), cobrindo as 71 rotas e as 37 ferramentas.
+- O teste de backup exige que toda tabela do banco seja classificada como com dono ou sem dono.
+- 174 testes passando.
+- Duas mutações (uma consulta trocada para `user_id = user_id`) foram pegas pelo teste de isolamento, sem depender da trava.
+- O teste de isolamento achou um vazamento real, já corrigido: `/api/receivables/access` mostrava, para outra pessoa, os nomes com código de devedor.
+
+**Ensaio com cópia da produção:**
+
+1. Exportar o banco de produção (26/10, ~15h).
+2. Snapshot da API e do MCP com o código no ar.
+3. Aplicar a 0010.
+4. Snapshot com o código antigo no banco novo (rollback).
+5. Snapshot com o código novo no banco novo.
+
+Resultado: os 73 arquivos ficaram idênticos nos três snapshots. A página `/devedor` com o código novo mostra, para uma pessoa com código, os mesmos valores que o resumo.
+
+**Pontos conhecidos:**
+
+- **Ids são globais (autoincremento):** uma pessoa vê ids altos e pode deduzir quantos registros existem no sistema, mas não o conteúdo. Fica assim.
+- **Janela entre migrar e publicar:** se uma configuração ou um saldo ajustado for alterado nesse intervalo, fica só nas tabelas antigas. A migração e o deploy devem ser feitos em seguida.
+- **Rollback:** a versão anterior lê `settings` e `month_balances`, que não recebem mais alterações depois do deploy.
+
+**Deploy:** cada passo depois do outro.
+
+1. Exportar o banco de produção.
+2. `npm run db:migrate:remote` (aplica a 0010).
+3. `npm run deploy`.
+4. Conferir que o `resumo_mes` ficou igual.
+

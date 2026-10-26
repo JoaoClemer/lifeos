@@ -65,14 +65,15 @@ function listTools() {
 const result = (id: JsonRpcId, result: unknown) => ({ jsonrpc: "2.0", id, result });
 const error = (id: JsonRpcId, code: number, message: string) => ({ jsonrpc: "2.0", id, error: { code, message } });
 
-async function callTool(params: Record<string, unknown> | undefined, env: Env) {
+async function callTool(params: Record<string, unknown> | undefined, env: Env, userId: number) {
   const name = params?.name as string;
   const tool = TOOLS.find((t) => t.name === name);
   if (!tool) return { content: [{ type: "text", text: `Ferramenta desconhecida: ${name}` }], isError: true };
+  const ctx = makeCtx(env, userId, "mcp");
   try {
     const args = tool.schema.parse(params?.arguments ?? {});
-    const text = await tool.run(args, makeCtx(env, "mcp"));
-    if (!tool.annotations?.readOnlyHint) await auditMcpCall(env.DB, name, args, true, text);
+    const text = await tool.run(args, ctx);
+    if (!tool.annotations?.readOnlyHint) await auditMcpCall(ctx, name, args, true, text);
     return { content: [{ type: "text", text }] };
   } catch (e) {
     let text: string;
@@ -82,12 +83,12 @@ async function callTool(params: Record<string, unknown> | undefined, env: Env) {
       console.error("MCP tool error", name, e);
       text = `Erro inesperado: ${e instanceof Error ? e.message : String(e)}`;
     }
-    if (!tool.annotations?.readOnlyHint) await auditMcpCall(env.DB, name, params?.arguments ?? {}, false, text);
+    if (!tool.annotations?.readOnlyHint) await auditMcpCall(ctx, name, params?.arguments ?? {}, false, text);
     return { content: [{ type: "text", text }], isError: true };
   }
 }
 
-async function handleMessage(msg: JsonRpcMessage, env: Env) {
+async function handleMessage(msg: JsonRpcMessage, env: Env, userId: number) {
   if (!msg || typeof msg !== "object" || msg.jsonrpc !== "2.0") return error(null, -32600, "Invalid Request");
   // Notificações (sem id) e respostas do cliente não têm resposta
   if (msg.id === undefined || !msg.method) return null;
@@ -108,7 +109,7 @@ async function handleMessage(msg: JsonRpcMessage, env: Env) {
     case "tools/list":
       return result(id, { tools: listTools() });
     case "tools/call":
-      return result(id, await callTool(msg.params, env));
+      return result(id, await callTool(msg.params, env, userId));
     case "resources/list":
       return result(id, { resources: [] });
     case "resources/templates/list":
@@ -120,7 +121,8 @@ async function handleMessage(msg: JsonRpcMessage, env: Env) {
   }
 }
 
-export async function handleMcpRequest(req: Request, env: Env): Promise<Response> {
+/** Atende o MCP de uma pessoa já autenticada (pelo token): as ferramentas só enxergam os dados dela. */
+export async function handleMcpRequest(req: Request, env: Env, userId: number): Promise<Response> {
   if (req.method === "GET" || req.method === "DELETE") {
     // Sem stream SSE nem sessões: o cliente deve usar só POST
     return new Response("Method Not Allowed", { status: 405, headers: { Allow: "POST" } });
@@ -134,7 +136,7 @@ export async function handleMcpRequest(req: Request, env: Env): Promise<Response
     return Response.json(error(null, -32700, "Parse error"), { status: 400 });
   }
   const messages = (Array.isArray(body) ? body : [body]) as JsonRpcMessage[];
-  const responses = (await Promise.all(messages.map((m) => handleMessage(m, env)))).filter((r) => r !== null);
+  const responses = (await Promise.all(messages.map((m) => handleMessage(m, env, userId)))).filter((r) => r !== null);
   if (responses.length === 0) return new Response(null, { status: 202 });
   return Response.json(Array.isArray(body) ? responses : responses[0]);
 }

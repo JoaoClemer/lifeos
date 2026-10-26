@@ -41,14 +41,14 @@ const COLS = "id, description, installment_cents, total_installments, first_mont
 /** Parcelados ativos no mês (ou todos, com `all`). */
 export async function listInstallments(ctx: Ctx, month: string, all = false): Promise<Installment[]> {
   const sql = all
-    ? `SELECT ${COLS} FROM installments ORDER BY last_month DESC, description COLLATE NOCASE`
-    : `SELECT ${COLS} FROM installments WHERE first_month <= ?1 AND last_month >= ?1 ORDER BY last_month, description COLLATE NOCASE`;
-  const stmt = all ? ctx.db.prepare(sql) : ctx.db.prepare(sql).bind(month);
+    ? `SELECT ${COLS} FROM installments WHERE user_id = ?2 ORDER BY last_month DESC, description COLLATE NOCASE`
+    : `SELECT ${COLS} FROM installments WHERE user_id = ?2 AND first_month <= ?1 AND last_month >= ?1 ORDER BY last_month, description COLLATE NOCASE`;
+  const stmt = ctx.db.prepare(sql).bind(month, ctx.userId);
   return (await stmt.all<Row>()).results.map((r) => decorate(r, month));
 }
 
 export async function getInstallment(ctx: Ctx, id: number, month = ctx.month): Promise<Installment> {
-  const row = await ctx.db.prepare(`SELECT ${COLS} FROM installments WHERE id = ?`).bind(id).first<Row>();
+  const row = await ctx.db.prepare(`SELECT ${COLS} FROM installments WHERE id = ? AND user_id = ?`).bind(id, ctx.userId).first<Row>();
   if (!row) throw new UserError(`Parcelado ${id} não encontrado`, 404);
   return decorate(row, month);
 }
@@ -57,7 +57,7 @@ export async function createInstallment(ctx: Ctx, input: z.input<typeof Installm
   const i = InstallmentInput.parse(input);
   const n = i.total_installments;
   const value = i.installment_cents ?? Math.round(i.total_cents! / n);
-  const account = i.account_id ? await mustGet<Account>(ctx.db, "accounts", i.account_id, "Conta") : null;
+  const account = i.account_id ? await mustGet<Account>(ctx, "accounts", i.account_id, "Conta") : null;
   let first: string;
   if (i.first_month) first = i.first_month;
   else if (i.current_installment) {
@@ -66,10 +66,10 @@ export async function createInstallment(ctx: Ctx, input: z.input<typeof Installm
   } else first = referenceMonth(i.purchase_date ?? ctx.today, account);
   const row = await ctx.db
     .prepare(
-      `INSERT INTO installments (description, installment_cents, total_installments, first_month, last_month, account_id, purchase_date)
-       VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+      `INSERT INTO installments (user_id, description, installment_cents, total_installments, first_month, last_month, account_id, purchase_date)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
     )
-    .bind(i.description, value, n, first, addMonths(first, n - 1), account?.id ?? null, nn(i.purchase_date))
+    .bind(ctx.userId, i.description, value, n, first, addMonths(first, n - 1), account?.id ?? null, nn(i.purchase_date))
     .first<{ id: number }>();
   return getInstallment(ctx, row!.id, i.reference_month ?? ctx.month);
 }
@@ -77,10 +77,11 @@ export async function createInstallment(ctx: Ctx, input: z.input<typeof Installm
 export async function updateInstallment(ctx: Ctx, id: number, patch: z.input<typeof InstallmentPatch>): Promise<Installment> {
   const p = InstallmentPatch.parse(patch);
   const cur = await getInstallment(ctx, id);
+  if (p.account_id) await mustGet(ctx, "accounts", p.account_id, "Conta");
   const first = p.first_month ?? cur.first_month;
   const n = p.total_installments ?? cur.total_installments;
   await updateRow(
-    ctx.db,
+    ctx,
     "installments",
     id,
     { ...p, last_month: addMonths(first, n - 1) },
@@ -91,6 +92,6 @@ export async function updateInstallment(ctx: Ctx, id: number, patch: z.input<typ
 
 export async function deleteInstallment(ctx: Ctx, id: number): Promise<Installment> {
   const cur = await getInstallment(ctx, id);
-  await ctx.db.prepare("DELETE FROM installments WHERE id = ?").bind(id).run();
+  await ctx.db.prepare("DELETE FROM installments WHERE id = ? AND user_id = ?").bind(id, ctx.userId).run();
   return cur;
 }

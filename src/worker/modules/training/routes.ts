@@ -1,10 +1,9 @@
 import { Hono } from "hono";
 import { SPORTS, type Sport } from "../../../shared/training";
-import { idParam, limitParam, makeCtx, UserError } from "../../lib";
+import { type AppEnv, ctxOf, idParam, limitParam, UserError } from "../../lib";
 import * as training from "./service";
 
-export const trainingRoutes = new Hono<{ Bindings: Env }>();
-const ctxOf = (c: { env: Env }) => makeCtx(c.env);
+export const trainingRoutes = new Hono<AppEnv>();
 const sportParam = (v: string | undefined): Sport | undefined => {
   if (!v) return undefined;
   if (!(SPORTS as string[]).includes(v)) throw new UserError("modalidade inválida");

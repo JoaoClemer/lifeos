@@ -3,11 +3,11 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { z } from "zod";
 import { personKey } from "../shared/receivables";
 import { createDebtorSession, DEBTOR_COOKIE, DEBTOR_MAX_AGE, safeEqual, verifyDebtorSession } from "./auth";
-import { makeCtx } from "./lib";
+import { makeCtx, OWNER_USER_ID } from "./lib";
 import { debtorCodes, debtorStatement, peopleWithAccess } from "./services/debtorAccess";
 
 // API pública da página /devedor. Não usa a sessão do dono do app: cada pessoa entra com o próprio código
-// e só recebe os valores dela.
+// e só recebe os valores dela. Os códigos (DEBTOR_CODE_*) são do dono do app: os valores vêm dos devedores dele.
 export const debtorApi = new Hono<{ Bindings: Env }>();
 
 const COOKIE_PATH = "/api/debtor";
@@ -15,7 +15,7 @@ const LoginInput = z.object({ person: z.string().trim().min(1), code: z.string()
 
 /** Nomes para a pessoa escolher o dela (só quem tem código configurado). */
 debtorApi.get("/people", async (c) => {
-  const people = await peopleWithAccess(makeCtx(c.env), debtorCodes(c.env));
+  const people = await peopleWithAccess(makeCtx(c.env, OWNER_USER_ID), debtorCodes(c.env));
   return c.json(people.map((p) => p.name));
 });
 
@@ -46,7 +46,7 @@ debtorApi.get("/statement", async (c) => {
   const codes = debtorCodes(c.env);
   const key = await verifyDebtorSession(codes, getCookie(c, DEBTOR_COOKIE));
   if (!key) return c.json({ error: "Não autenticado" }, 401);
-  const ctx = makeCtx(c.env);
+  const ctx = makeCtx(c.env, OWNER_USER_ID);
   const person = (await peopleWithAccess(ctx, codes)).find((p) => p.key === key)!;
   return c.json(await debtorStatement(ctx, key, person.name));
 });

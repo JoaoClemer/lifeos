@@ -29,9 +29,10 @@ export type GoalRow = Omit<Goal, "month_planned_cents" | "eta_month" | "required
 type Row = GoalRow;
 
 const SELECT = `SELECT g.id, g.name, g.institution, g.target_cents, g.monthly_cents, g.deadline, g.start_month, g.color, g.archived,
-  COALESCE((SELECT SUM(amount_cents) FROM goal_entries WHERE goal_id = g.id), 0) AS balance_cents,
-  COALESCE((SELECT SUM(amount_cents) FROM goal_entries WHERE goal_id = g.id AND month = ?1 AND kind IN ('contribution', 'withdrawal')), 0) AS month_contrib_cents
+  COALESCE((SELECT SUM(amount_cents) FROM goal_entries WHERE goal_id = g.id AND user_id = g.user_id), 0) AS balance_cents,
+  COALESCE((SELECT SUM(amount_cents) FROM goal_entries WHERE goal_id = g.id AND user_id = g.user_id AND month = ?1 AND kind IN ('contribution', 'withdrawal')), 0) AS month_contrib_cents
   FROM goals g`;
+// ?1 = mês, ?2 = dono, ?3 = id
 
 /** Calcula aporte planejado, previsão e aporte necessário de uma meta no mês (usado também pelo saldo acumulado). */
 export function decorateGoal(g: Row, month: string): Goal {
@@ -56,12 +57,12 @@ export function decorateGoal(g: Row, month: string): Goal {
 }
 
 export async function listGoals(ctx: Ctx, month: string, includeArchived = false): Promise<Goal[]> {
-  const sql = `${SELECT} ${includeArchived ? "" : "WHERE g.archived = 0"} ORDER BY g.archived, g.id`;
-  return (await ctx.db.prepare(sql).bind(month).all<Row>()).results.map((g) => decorateGoal(g, month));
+  const sql = `${SELECT} WHERE g.user_id = ?2 ${includeArchived ? "" : "AND g.archived = 0"} ORDER BY g.archived, g.id`;
+  return (await ctx.db.prepare(sql).bind(month, ctx.userId).all<Row>()).results.map((g) => decorateGoal(g, month));
 }
 
 export async function getGoal(ctx: Ctx, id: number, month = ctx.month): Promise<Goal> {
-  const row = await ctx.db.prepare(`${SELECT} WHERE g.id = ?2`).bind(month, id).first<Row>();
+  const row = await ctx.db.prepare(`${SELECT} WHERE g.user_id = ?2 AND g.id = ?3`).bind(month, ctx.userId, id).first<Row>();
   if (!row) throw new UserError(`Meta ${id} não encontrada`, 404);
   return decorateGoal(row, month);
 }
@@ -71,14 +72,14 @@ export async function createGoal(ctx: Ctx, input: z.input<typeof GoalInput>): Pr
   const start = g.start_month ?? ctx.month;
   const row = await ctx.db
     .prepare(
-      `INSERT INTO goals (name, institution, target_cents, monthly_cents, deadline, start_month, color) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+      `INSERT INTO goals (user_id, name, institution, target_cents, monthly_cents, deadline, start_month, color) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
     )
-    .bind(g.name, nn(g.institution), nn(g.target_cents), nn(g.monthly_cents), nn(g.deadline), start, nn(g.color))
+    .bind(ctx.userId, g.name, nn(g.institution), nn(g.target_cents), nn(g.monthly_cents), nn(g.deadline), start, nn(g.color))
     .first<{ id: number }>();
   if (g.initial_cents) {
     await ctx.db
-      .prepare(`INSERT INTO goal_entries (goal_id, kind, amount_cents, month, date, note) VALUES (?, 'adjustment', ?, ?, ?, 'Saldo inicial')`)
-      .bind(row!.id, g.initial_cents, ctx.month, ctx.today)
+      .prepare(`INSERT INTO goal_entries (user_id, goal_id, kind, amount_cents, month, date, note) VALUES (?, ?, 'adjustment', ?, ?, ?, 'Saldo inicial')`)
+      .bind(ctx.userId, row!.id, g.initial_cents, ctx.month, ctx.today)
       .run();
   }
   return getGoal(ctx, row!.id);
@@ -86,21 +87,22 @@ export async function createGoal(ctx: Ctx, input: z.input<typeof GoalInput>): Pr
 
 export async function updateGoal(ctx: Ctx, id: number, patch: z.input<typeof GoalPatch>): Promise<Goal> {
   const p = GoalPatch.parse(patch);
-  await updateRow(ctx.db, "goals", id, p, ["name", "institution", "target_cents", "monthly_cents", "deadline", "start_month", "color", "archived"]);
+  await updateRow(ctx, "goals", id, p, ["name", "institution", "target_cents", "monthly_cents", "deadline", "start_month", "color", "archived"]);
   return getGoal(ctx, id);
 }
 
 export async function deleteGoal(ctx: Ctx, id: number): Promise<Goal> {
   const cur = await getGoal(ctx, id);
-  await ctx.db.prepare("DELETE FROM goals WHERE id = ?").bind(id).run();
+  await ctx.db.prepare("DELETE FROM goals WHERE id = ? AND user_id = ?").bind(id, ctx.userId).run();
   return cur;
 }
 
 export async function listGoalEntries(ctx: Ctx, goalId: number): Promise<GoalEntry[]> {
+  await getGoal(ctx, goalId);
   return (
     await ctx.db
-      .prepare("SELECT id, goal_id, kind, amount_cents, month, date, note FROM goal_entries WHERE goal_id = ? ORDER BY date DESC, id DESC")
-      .bind(goalId)
+      .prepare("SELECT id, goal_id, kind, amount_cents, month, date, note FROM goal_entries WHERE goal_id = ? AND user_id = ? ORDER BY date DESC, id DESC")
+      .bind(goalId, ctx.userId)
       .all<GoalEntry>()
   ).results;
 }
@@ -113,16 +115,16 @@ export async function addGoalEntry(ctx: Ctx, goalId: number, input: z.input<type
   const date = e.date ?? ctx.today;
   const row = await ctx.db
     .prepare(
-      `INSERT INTO goal_entries (goal_id, kind, amount_cents, month, date, note) VALUES (?, ?, ?, ?, ?, ?)
+      `INSERT INTO goal_entries (user_id, goal_id, kind, amount_cents, month, date, note) VALUES (?, ?, ?, ?, ?, ?, ?)
        RETURNING id, goal_id, kind, amount_cents, month, date, note`,
     )
-    .bind(goalId, e.kind, signed, e.month ?? monthOf(date), date, nn(e.note))
+    .bind(ctx.userId, goalId, e.kind, signed, e.month ?? monthOf(date), date, nn(e.note))
     .first<GoalEntry>();
   return row!;
 }
 
 export async function deleteGoalEntry(ctx: Ctx, entryId: number): Promise<void> {
-  const res = await ctx.db.prepare("DELETE FROM goal_entries WHERE id = ?").bind(entryId).run();
+  const res = await ctx.db.prepare("DELETE FROM goal_entries WHERE id = ? AND user_id = ?").bind(entryId, ctx.userId).run();
   if (!res.meta.changes) throw new UserError(`Movimentação ${entryId} não encontrada`, 404);
 }
 

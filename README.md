@@ -177,6 +177,11 @@ npm test
 
 Os testes rodam dentro do runtime do Workers, com um D1 local criado a partir das migrations. Eles fixam as regras do financeiro (resumo, faturas, orçamentos, saldo acumulado, devedores, metas, backup e as ferramentas do MCP) com dados fictícios em [test/fixtures/finance.ts](test/fixtures/finance.ts). Se um teste de snapshot falhar, a mudança alterou um resultado: confira se era a intenção antes de atualizar o snapshot (`npx vitest run -u`).
 
+Cada linha do banco tem dono (`user_id`). Duas proteções garantem que uma pessoa não veja os dados de outra:
+
+- [test/ownerGuard.ts](test/ownerGuard.ts) fica ligado em todos os testes. Ele reprova qualquer consulta do Worker que cite uma tabela com dono sem filtrar por `user_id`.
+- [test/isolation.test.ts](test/isolation.test.ts) chama todas as rotas da API e todas as ferramentas do MCP como outra pessoa, usando os ids e os nomes da primeira. Nada dela pode aparecer nem mudar. Uma rota ou ferramenta nova só passa se entrar nesse teste.
+
 Antes de publicar uma mudança grande, dá para comparar as respostas da API e do MCP com uma cópia dos dados reais. Carregue o backup da produção no banco local, rode `npm run dev` e:
 
 ```bash

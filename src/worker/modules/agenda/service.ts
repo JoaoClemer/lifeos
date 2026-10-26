@@ -47,7 +47,7 @@ const COLS =
 const decorate = (r: Row): CalendarEvent => ({ ...r, all_day: !!r.all_day, cancelled: !!r.cancelled });
 
 export async function getEvent(ctx: Ctx, id: number): Promise<CalendarEvent> {
-  const row = await ctx.db.prepare(`SELECT ${COLS} FROM events WHERE id = ?`).bind(id).first<Row>();
+  const row = await ctx.db.prepare(`SELECT ${COLS} FROM events WHERE id = ? AND user_id = ?`).bind(id, ctx.userId).first<Row>();
   if (!row) throw new UserError(`Evento ${id} não encontrado`, 404);
   return decorate(row);
 }
@@ -117,10 +117,10 @@ export async function createEvent(ctx: Ctx, input: z.input<typeof EventInput>): 
   await checkTask(ctx, e.task_id);
   const row = await ctx.db
     .prepare(
-      `INSERT INTO events (title, description, location, url, category, color, all_day, start_at, end_at, timezone, rrule, task_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+      `INSERT INTO events (user_id, title, description, location, url, category, color, all_day, start_at, end_at, timezone, rrule, task_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
     )
-    .bind(e.title, nn(e.description), nn(e.location), nn(e.url), nn(e.category), nn(e.color), t.all_day ? 1 : 0, t.start_at, t.end_at, ctx.timezone, rrule, nn(e.task_id))
+    .bind(ctx.userId, e.title, nn(e.description), nn(e.location), nn(e.url), nn(e.category), nn(e.color), t.all_day ? 1 : 0, t.start_at, t.end_at, ctx.timezone, rrule, nn(e.task_id))
     .first<{ id: number }>();
   return getEvent(ctx, row!.id);
 }
@@ -154,15 +154,17 @@ export async function listOccurrences(ctx: Ctx, from: string, to: string): Promi
   const wStart = `${from}T00:00`;
   const wEnd = `${addDays(to, 1)}T00:00`;
   const [singles, series] = await ctx.db.batch<Row>([
-    ctx.db.prepare(`SELECT ${COLS} FROM events WHERE series_id IS NULL AND rrule IS NULL AND start_at < ? AND end_at > ?`).bind(wEnd, wStart),
-    ctx.db.prepare(`SELECT ${COLS} FROM events WHERE series_id IS NULL AND rrule IS NOT NULL AND start_at < ?`).bind(wEnd),
+    ctx.db
+      .prepare(`SELECT ${COLS} FROM events WHERE user_id = ? AND series_id IS NULL AND rrule IS NULL AND start_at < ? AND end_at > ?`)
+      .bind(ctx.userId, wEnd, wStart),
+    ctx.db.prepare(`SELECT ${COLS} FROM events WHERE user_id = ? AND series_id IS NULL AND rrule IS NOT NULL AND start_at < ?`).bind(ctx.userId, wEnd),
   ]);
   const masters = series.results.map(decorate);
   const exceptions = masters.length
     ? (
         await ctx.db
-          .prepare(`SELECT ${COLS} FROM events WHERE series_id IN (${masters.map(() => "?").join(", ")})`)
-          .bind(...masters.map((m) => m.id))
+          .prepare(`SELECT ${COLS} FROM events WHERE user_id = ? AND series_id IN (${masters.map(() => "?").join(", ")})`)
+          .bind(ctx.userId, ...masters.map((m) => m.id))
           .all<Row>()
       ).results.map(decorate)
     : [];
@@ -189,21 +191,29 @@ export async function listOccurrences(ctx: Ctx, from: string, to: string): Promi
 /** Evento com o mesmo título e início criado há pouco (evita duplicar quando o Claude repete uma chamada). */
 export async function findRecentEvent(ctx: Ctx, title: string, startAt: string, minutes = 10): Promise<CalendarEvent | null> {
   const row = await ctx.db
-    .prepare(`SELECT ${COLS} FROM events WHERE series_id IS NULL AND lower(title) = lower(?) AND start_at = ? AND created_at >= datetime('now', ?) ORDER BY id DESC LIMIT 1`)
-    .bind(title.trim(), startAt, `-${minutes} minutes`)
+    .prepare(
+      `SELECT ${COLS} FROM events WHERE user_id = ? AND series_id IS NULL AND lower(title) = lower(?) AND start_at = ? AND created_at >= datetime('now', ?) ORDER BY id DESC LIMIT 1`,
+    )
+    .bind(ctx.userId, title.trim(), startAt, `-${minutes} minutes`)
     .first<Row>();
   return row ? decorate(row) : null;
 }
 
 /** Eventos ligados a uma tarefa (horários reservados para ela). */
 export async function listTaskEvents(ctx: Ctx, taskId: number): Promise<CalendarEvent[]> {
-  const rows = await ctx.db.prepare(`SELECT ${COLS} FROM events WHERE task_id = ? AND cancelled = 0 ORDER BY start_at`).bind(taskId).all<Row>();
+  const rows = await ctx.db
+    .prepare(`SELECT ${COLS} FROM events WHERE task_id = ? AND user_id = ? AND cancelled = 0 ORDER BY start_at`)
+    .bind(taskId, ctx.userId)
+    .all<Row>();
   return rows.results.map(decorate);
 }
 
 export async function listCategories(ctx: Ctx): Promise<string[]> {
   const rows = await ctx.db
-    .prepare("SELECT category, COUNT(*) AS n FROM events WHERE category IS NOT NULL AND category <> '' GROUP BY category ORDER BY n DESC, category LIMIT 30")
+    .prepare(
+      "SELECT category, COUNT(*) AS n FROM events WHERE user_id = ? AND category IS NOT NULL AND category <> '' GROUP BY category ORDER BY n DESC, category LIMIT 30",
+    )
+    .bind(ctx.userId)
     .all<{ category: string }>();
   return rows.results.map((r) => r.category);
 }
@@ -227,8 +237,8 @@ async function seriesTarget(ctx: Ctx, ev: CalendarEvent, occurrenceStart: string
   const exception = ev.series_id
     ? ev
     : await ctx.db
-        .prepare(`SELECT ${COLS} FROM events WHERE series_id = ? AND original_start = ?`)
-        .bind(series.id, occ)
+        .prepare(`SELECT ${COLS} FROM events WHERE series_id = ? AND original_start = ? AND user_id = ?`)
+        .bind(series.id, occ, ctx.userId)
         .first<Row>()
         .then((x) => (x ? decorate(x) : null));
   if (!exception && !isOccurrence(series.start_at, r, occ)) throw new UserError(`${occ} não é uma ocorrência desta série`);
@@ -270,8 +280,8 @@ function fieldsOf(e: CalendarEvent, p: z.output<typeof EventPatch>, t: Timing) {
 function updateStmt(ctx: Ctx, id: number, fields: Record<string, string | number | null>) {
   const keys = Object.keys(fields);
   return ctx.db
-    .prepare(`UPDATE events SET ${keys.map((k) => `${k} = ?`).join(", ")}, updated_at = datetime('now') WHERE id = ?`)
-    .bind(...Object.values(fields), id);
+    .prepare(`UPDATE events SET ${keys.map((k) => `${k} = ?`).join(", ")}, updated_at = datetime('now') WHERE id = ? AND user_id = ?`)
+    .bind(...Object.values(fields), id, ctx.userId);
 }
 
 /**
@@ -309,10 +319,10 @@ export async function updateEvent(ctx: Ctx, id: number, patch: z.input<typeof Ev
     }
     const row = await ctx.db
       .prepare(
-        `INSERT INTO events (title, description, location, url, category, color, task_id, all_day, start_at, end_at, timezone, series_id, original_start)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+        `INSERT INTO events (title, description, location, url, category, color, task_id, all_day, start_at, end_at, timezone, series_id, original_start, user_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
       )
-      .bind(...Object.values(fields), series.timezone, series.id, occ)
+      .bind(...Object.values(fields), series.timezone, series.id, occ, ctx.userId)
       .first<{ id: number }>();
     return getEvent(ctx, row!.id);
   }
@@ -331,7 +341,7 @@ export async function updateEvent(ctx: Ctx, id: number, patch: z.input<typeof Ev
     const timingChanged = t.start_at !== series.start_at || t.end_at !== series.end_at || (newRule !== undefined && newRule !== series.rrule);
     await ctx.db.batch([
       updateStmt(ctx, series.id, { ...fieldsOf(series, p, t), ...(newRule !== undefined ? { rrule: newRule } : {}) }),
-      ...(timingChanged ? [ctx.db.prepare("DELETE FROM events WHERE series_id = ?").bind(series.id)] : []),
+      ...(timingChanged ? [ctx.db.prepare("DELETE FROM events WHERE series_id = ? AND user_id = ?").bind(series.id, ctx.userId)] : []),
     ]);
     return getEvent(ctx, series.id);
   }
@@ -346,13 +356,15 @@ export async function updateEvent(ctx: Ctx, id: number, patch: z.input<typeof Ev
   const results = await ctx.db.batch<{ id: number }>([
     ctx.db
       .prepare(
-        `INSERT INTO events (title, description, location, url, category, color, task_id, all_day, start_at, end_at, timezone, rrule)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+        `INSERT INTO events (title, description, location, url, category, color, task_id, all_day, start_at, end_at, timezone, rrule, user_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
       )
-      .bind(...Object.values(fields), series.timezone, nextRule),
+      .bind(...Object.values(fields), series.timezone, nextRule, ctx.userId),
     keepExceptions
-      ? ctx.db.prepare("UPDATE events SET series_id = last_insert_rowid() WHERE series_id = ? AND original_start >= ?").bind(series.id, occ)
-      : ctx.db.prepare("DELETE FROM events WHERE series_id = ? AND original_start >= ?").bind(series.id, occ),
+      ? ctx.db
+          .prepare("UPDATE events SET series_id = last_insert_rowid() WHERE series_id = ? AND original_start >= ? AND user_id = ?")
+          .bind(series.id, occ, ctx.userId)
+      : ctx.db.prepare("DELETE FROM events WHERE series_id = ? AND original_start >= ? AND user_id = ?").bind(series.id, occ, ctx.userId),
     updateStmt(ctx, series.id, { rrule: formatRRule(before) }),
   ]);
   return getEvent(ctx, results[0].results[0].id);
@@ -363,7 +375,7 @@ export async function deleteEvent(ctx: Ctx, id: number, scopeInput: z.input<type
   const { scope, occurrence_start } = ScopeInput.parse(scopeInput);
   const ev = await getEvent(ctx, id);
   if (!ev.rrule && !ev.series_id) {
-    await ctx.db.prepare("DELETE FROM events WHERE id = ?").bind(id).run();
+    await ctx.db.prepare("DELETE FROM events WHERE id = ? AND user_id = ?").bind(id, ctx.userId).run();
     return { deleted: 1 };
   }
   const { series, rule: r, occ, exception } = await seriesTarget(ctx, ev, occurrence_start);
@@ -374,20 +386,20 @@ export async function deleteEvent(ctx: Ctx, id: number, scopeInput: z.input<type
       const minutes = diffMinutes(series.start_at, series.end_at);
       await ctx.db
         .prepare(
-          `INSERT INTO events (title, all_day, start_at, end_at, timezone, series_id, original_start, cancelled) VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+          `INSERT INTO events (user_id, title, all_day, start_at, end_at, timezone, series_id, original_start, cancelled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
         )
-        .bind(series.title, series.all_day ? 1 : 0, occ, addMinutes(occ, minutes), series.timezone, series.id, occ)
+        .bind(ctx.userId, series.title, series.all_day ? 1 : 0, occ, addMinutes(occ, minutes), series.timezone, series.id, occ)
         .run();
     }
     return { deleted: 1 };
   }
   if (s === "all" || countBefore(series.start_at, r, occ) === 0) {
-    await ctx.db.prepare("DELETE FROM events WHERE id = ?").bind(series.id).run();
+    await ctx.db.prepare("DELETE FROM events WHERE id = ? AND user_id = ?").bind(series.id, ctx.userId).run();
     return { deleted: -1 };
   }
   const { before } = splitRule(series, r, occ);
   await ctx.db.batch([
-    ctx.db.prepare("DELETE FROM events WHERE series_id = ? AND original_start >= ?").bind(series.id, occ),
+    ctx.db.prepare("DELETE FROM events WHERE series_id = ? AND original_start >= ? AND user_id = ?").bind(series.id, occ, ctx.userId),
     updateStmt(ctx, series.id, { rrule: formatRRule(before) }),
   ]);
   return { deleted: -1 };

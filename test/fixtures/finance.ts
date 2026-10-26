@@ -5,8 +5,9 @@ import type { Ctx } from "../../src/worker/lib";
 export const TODAY = "2026-10-15";
 export const MONTH = "2026-10";
 
-export function testCtx(db: D1Database, today = TODAY, time = "10:00"): Ctx {
-  return { db, today, month: today.slice(0, 7), timezone: "America/Sao_Paulo", now: `${today}T${time}`, source: "app" };
+/** Ctx de teste. Os dados de exemplo são da pessoa 1 (o dono). */
+export function testCtx(db: D1Database, today = TODAY, time = "10:00", userId = 1): Ctx {
+  return { db, userId, today, month: today.slice(0, 7), timezone: "America/Sao_Paulo", now: `${today}T${time}`, source: "app" };
 }
 
 /** Tabelas do financeiro, das dependentes para as independentes (ordem segura para apagar). */
@@ -19,8 +20,8 @@ const TABLES = [
   "recurring_months",
   "recurring",
   "installments",
-  "month_balances",
-  "settings",
+  "user_month_balances",
+  "user_settings",
   "accounts",
 ];
 
@@ -32,8 +33,8 @@ const SEED = [
      (2, 'Cartão B', 'credit', 5, 12, NULL),
      (3, 'Pix', 'pix', NULL, NULL, NULL),
      (4, 'VR', 'voucher', NULL, NULL, NULL)`,
-  `INSERT INTO settings (key, value) VALUES
-     ('default_account_id', '2'), ('income_cents', '650000'), ('balance_start_month', '2026-09')`,
+  `INSERT INTO user_settings (user_id, key, value) VALUES
+     (1, 'default_account_id', '2'), (1, 'income_cents', '650000'), (1, 'balance_start_month', '2026-09')`,
   `INSERT INTO installments (id, description, installment_cents, total_installments, first_month, last_month, account_id, purchase_date) VALUES
      (1, 'Notebook', 45000, 12, '2026-07', '2027-06', 2, '2026-06-20'),
      (2, 'Fone', 12000, 3, '2026-09', '2026-11', 1, '2026-08-10'),
@@ -75,10 +76,15 @@ const SEED = [
      (2, 1, 'contribution', 50000, '2026-09', '2026-09-25', NULL),
      (3, 1, 'contribution', 50000, '2026-10', '2026-10-05', NULL),
      (4, 2, 'contribution', 100000, '2026-09', '2026-09-25', NULL)`,
-  `INSERT INTO month_balances (month, opening_cents, note) VALUES ('2026-11', 100000, 'Conferido no banco')`,
+  `INSERT INTO user_month_balances (user_id, month, opening_cents, note) VALUES (1, '2026-11', 100000, 'Conferido no banco')`,
 ];
 
 /** Apaga tudo do financeiro e carrega a fixture. */
 export async function resetFinance(db: D1Database): Promise<void> {
-  await db.batch([...TABLES.map((t) => db.prepare(`DELETE FROM ${t}`)), ...SEED.map((s) => db.prepare(s))]);
+  await db.batch([
+    ...TABLES.map((t) => db.prepare(`DELETE FROM ${t}`)),
+    // Só o dono (pessoa 1) fica; outras pessoas são criadas nos testes de isolamento
+    db.prepare("DELETE FROM users WHERE id <> 1"),
+    ...SEED.map((s) => db.prepare(s)),
+  ]);
 }
