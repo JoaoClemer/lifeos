@@ -62,6 +62,15 @@ O módulo de finanças nasceu para substituir uma planilha de controle mensal. A
 - **Saldo acumulado:** o saldo final de um mês (saldo inicial + sobra) vira o saldo inicial do seguinte, também nos meses futuros, como previsão. Se o valor real for outro (você conferiu o banco), ajuste o saldo inicial do mês em **Resumo → Saldo → Ajustar**: os meses seguintes passam a partir dele, e dá para voltar ao automático. O acúmulo começa no mês em que o recurso foi instalado, com saldo 0, para não somar meses antigos com dados incompletos.
 - **Metas:** cada meta é uma “caixinha” com saldo. Aportes, resgates e atualizações de saldo (rendimentos) ficam no histórico. O check do mês lança o aporte planejado.
 
+### Várias pessoas
+
+O LifeOS pode ser usado por pessoas convidadas (amigos, família), cada uma com a própria conta e todos os módulos. Ninguém vê os dados de outra pessoa.
+
+- **Convidar:** em **Ajustes → Pessoas**, quem administra gera um link de convite e manda pelo WhatsApp. A pessoa abre, confirma o nome e cria a conta com uma passkey.
+- **Perdeu o acesso** (celular novo sem a passkey sincronizada): o admin gera um link de recuperação na mesma tela, e a pessoa cadastra uma passkey nova.
+- **Desativar:** a pessoa sai de todos os aparelhos e não entra mais. Os dados dela ficam guardados.
+- **Primeiros passos:** quem acabou de entrar vê na tela Hoje o que falta configurar: cartões, salário e conector do Claude.
+
 ### Página dos devedores
 
 Quem te deve pode acompanhar os próprios valores em `https://financas.<seu-subdominio>.workers.dev/devedor`: a pessoa escolhe o nome, digita o código dela e vê o que está em aberto, as próximas parcelas e o que já pagou. Ela não vê cartões, outras pessoas nem nada do resto do app.
@@ -213,10 +222,13 @@ Os arquivos ficam em `backups/`, fora do git, porque contêm dados pessoais.
    Na primeira vez, o Wrangler pede um subdomínio `workers.dev` para a sua conta. O endereço final fica `https://financas.<seu-subdominio>.workers.dev`.
 5. Defina os segredos. O terminal pede cada valor; nada fica no código:
    ```bash
-   npx wrangler secret put APP_PASSWORD   # senha para entrar no app
-   openssl rand -hex 32                   # gera um token aleatório: copie o resultado
-   npx wrangler secret put MCP_TOKEN      # cole o token gerado
+   npx wrangler secret put APP_PASSWORD     # senha de administrador (entrada de reserva do dono)
+   openssl rand -hex 32                     # gera um valor aleatório: copie o resultado
+   npx wrangler secret put SESSION_SECRET   # cole o valor gerado (assina as sessões)
+   openssl rand -hex 32                     # outro valor aleatório
+   npx wrangler secret put MCP_TOKEN        # opcional: link fixo do conector do dono
    ```
+6. Entre com a senha de administrador e, em **Ajustes → Sua conta**, cadastre uma passkey neste aparelho. Daí em diante dá para entrar só com Face ID ou digital.
 
 Para atualizar depois, rode `npm run deploy`. Se houver migrações novas em `migrations/`, rode `npm run db:migrate:remote` **antes** do deploy. As migrações são só aditivas, então a versão que está no ar continua funcionando enquanto isso.
 
@@ -224,7 +236,7 @@ Para atualizar depois, rode `npm run deploy`. Se houver migrações novas em `mi
 
 ## Conectar ao Claude
 
-O link do conector aparece em **Ajustes → Conectar ao Claude** (botão copiar), no formato `https://financas.<seu-subdominio>.workers.dev/mcp/<MCP_TOKEN>`.
+Cada pessoa gera o próprio link em **Ajustes → Conectar ao Claude → Gerar link do conector**. O Claude conectado com ele só enxerga os dados dessa pessoa. O link aparece uma vez só (no banco fica apenas o hash) e pode ser revogado ali mesmo. O dono também pode usar o link fixo com o `MCP_TOKEN`.
 
 - **Claude (web, desktop e celular):** Configurações → Conectores → **Adicionar conector personalizado** → cole o link. Conectores adicionados na web também aparecem no app do celular.
 - **Claude Code:**
@@ -234,11 +246,15 @@ O link do conector aparece em **Ajustes → Conectar ao Claude** (botão copiar)
 
 ## Segurança e privacidade
 
-- **App:** login com uma senha única (`APP_PASSWORD`). A sessão fica num cookie `HttpOnly` assinado com HMAC e dura 180 dias.
+- **Contas:** cada pessoa entra com uma **passkey** (Face ID, digital ou PIN do aparelho), sem senha. A passkey é criada pelo link de convite. O servidor guarda só a chave pública.
+- **Sessão:** cookie `HttpOnly` assinado com HMAC (`SESSION_SECRET`), válido por 180 dias. Ele diz quem é a pessoa e a versão das sessões dela: **Sair de todos os aparelhos** aumenta a versão e derruba todas as sessões. Conta desativada não entra.
+- **Convites e recuperação:** links de uso único, válidos por 7 dias. O token vai no fragmento da URL (`#/convite/...`), então não chega a logs. No banco fica só o hash. Cada etapa do WebAuthn usa um desafio de uso único, válido por 5 minutos.
+- **Senha de administrador** (`APP_PASSWORD`): entrada de reserva do dono. Apague o segredo para desligá-la.
+- **Isolamento:** cada linha do banco tem dono, e toda consulta filtra por ele (veja [Testes](#testes)). Quem administra o LifeOS tem acesso técnico ao banco; o convite avisa isso à pessoa.
 - **Devedores:** cada pessoa entra em `/devedor` com o próprio código (`DEBTOR_CODE_<NOME>`) e só recebe os próprios valores. A sessão é um cookie separado, restrito a `/api/debtor`, assinado com o código dela e válido por 30 dias. Ela não abre o app, e a sessão do app não abre a página dela.
-- **MCP:** acesso protegido por um token separado (`MCP_TOKEN`), que vai na URL do conector ou no header `Authorization: Bearer`. O link funciona como uma senha e dá acesso a todos os módulos (agenda, tarefas, treinos e finanças): se vazar, troque com `npx wrangler secret put MCP_TOKEN` e atualize o conector.
+- **MCP:** cada conector tem um token próprio, que vai na URL do conector ou no header `Authorization: Bearer`. No banco fica só o hash. O link funciona como uma senha e dá acesso a todos os módulos da pessoa: se vazar, revogue em Ajustes e gere outro. O `MCP_TOKEN` (do dono) se troca com `npx wrangler secret put MCP_TOKEN`.
 - **Nada pessoal no repositório:** os segredos ficam em `.dev.vars` (local) e `wrangler secret` (produção), ambos fora do git. Dados reais também ficam fora: o `.gitignore` ignora qualquer `*.local.sql`.
-- **Backup:** em **Ajustes → Baixar backup (JSON)** você exporta todos os dados, de todos os módulos.
+- **Backup e exclusão:** em **Ajustes → Privacidade e dados**, cada pessoa baixa os próprios dados (JSON) ou exclui a conta e tudo o que é dela.
 
 ### Importar seus dados
 

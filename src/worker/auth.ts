@@ -1,6 +1,10 @@
-// Sessão simples para uso pessoal: senha única (APP_PASSWORD) -> cookie assinado com HMAC.
-// O MCP usa um token separado (MCP_TOKEN), na URL (/mcp/<token>) ou no header Authorization: Bearer.
+// Sessões: cookie assinado com HMAC dizendo quem é a pessoa e a versão das sessões dela (aumentar a versão derruba todas).
+// Entra-se com passkey (modules/users/passkeys.ts) ou, só o dono, com a senha do app (APP_PASSWORD).
+// O MCP usa tokens por pessoa (tabela mcp_tokens) ou, do dono, o MCP_TOKEN; na URL (/mcp/<token>) ou no header Authorization: Bearer.
 // Devedores têm códigos próprios (DEBTOR_CODE_<NOME>) e só enxergam os próprios valores (ver fim do arquivo).
+import type { Context } from "hono";
+import { setCookie } from "hono/cookie";
+import { OWNER_USER_ID } from "./lib";
 
 export const SESSION_COOKIE = "fin_session";
 export const SESSION_MAX_AGE = 60 * 60 * 24 * 180; // 180 dias
@@ -21,18 +25,76 @@ export function safeEqual(a: string, b: string): boolean {
   return crypto.subtle.timingSafeEqual(ab, bb);
 }
 
-export async function createSession(secret: string): Promise<string> {
-  const issued = Date.now().toString();
-  return `${issued}.${await hmac(secret, `session:${issued}`)}`;
-}
-
-export async function verifySession(secret: string | undefined, token: string | undefined): Promise<boolean> {
+/** Sessão do formato antigo (só a senha do app, antes das contas por pessoa). Ainda aceita: é do dono. */
+async function verifyLegacySession(secret: string | undefined, token: string | undefined): Promise<boolean> {
   if (!secret || !token) return false;
   const [issued, sig] = token.split(".");
   if (!issued || !sig) return false;
   if (Date.now() - Number(issued) > SESSION_MAX_AGE * 1000) return false;
   return safeEqual(sig, await hmac(secret, `session:${issued}`));
 }
+
+/** Chave das sessões: SESSION_SECRET ou, sem ela, a senha do app. */
+export function sessionKey(env: Env): string | null {
+  return env.SESSION_SECRET || env.APP_PASSWORD || null;
+}
+
+export async function createUserSession(key: string, userId: number, version: number): Promise<string> {
+  const issued = Date.now().toString();
+  return `u.${userId}.${version}.${issued}.${await hmac(key, `user:${userId}:${version}:${issued}`)}`;
+}
+
+/** Quem a sessão diz ser. `version` null: sessão antiga do dono (vale enquanto a versão dele for 0). */
+export interface SessionClaim {
+  userId: number;
+  version: number | null;
+}
+
+export async function readSession(env: Env, token: string | undefined): Promise<SessionClaim | null> {
+  if (!token) return null;
+  if (token.startsWith("u.")) {
+    const key = sessionKey(env);
+    const [, uid, ver, issued, sig] = token.split(".");
+    if (!key || !sig || ![uid, ver, issued].every((p) => p && /^\d+$/.test(p))) return null;
+    if (Date.now() - Number(issued) > SESSION_MAX_AGE * 1000) return null;
+    if (!safeEqual(sig, await hmac(key, `user:${uid}:${ver}:${issued}`))) return null;
+    return { userId: Number(uid), version: Number(ver) };
+  }
+  return (await verifyLegacySession(env.APP_PASSWORD, token)) ? { userId: OWNER_USER_ID, version: null } : null;
+}
+
+export function setSessionCookie(c: Context, token: string): void {
+  setCookie(c, SESSION_COOKIE, token, {
+    httpOnly: true,
+    secure: new URL(c.req.url).protocol === "https:",
+    sameSite: "Lax",
+    path: "/",
+    maxAge: SESSION_MAX_AGE,
+  });
+}
+
+/** Token aleatório (base64url), para links de convite e conectores do Claude. */
+export function randomToken(bytes = 32): string {
+  return base64url(crypto.getRandomValues(new Uint8Array(bytes)));
+}
+
+export function base64url(data: Uint8Array): string {
+  return btoa(String.fromCharCode(...data)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+export function fromBase64url(text: string): Uint8Array<ArrayBuffer> {
+  const bin = atob(text.replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from(bin, (c) => c.charCodeAt(0));
+}
+
+/** Tokens ficam no banco só como SHA-256. */
+export async function sha256Hex(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", enc.encode(text));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** Atraso em tentativas que falham (dificulta força bruta). */
+export const failureDelay = () => new Promise((r) => setTimeout(r, 800));
 
 export function checkMcpToken(expected: string | undefined, provided: string | undefined): boolean {
   if (!expected || expected.length < 16 || !provided) return false;

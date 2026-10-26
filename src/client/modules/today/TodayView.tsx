@@ -14,6 +14,7 @@ import { ListSkeleton } from "../../views/ExpensesView";
 import type { Recurring } from "../../../shared/types";
 import { EventRow } from "../agenda/EventRow";
 import { TaskRow } from "../tasks/TaskRow";
+import { GettingStarted } from "./GettingStarted";
 import { sessionTitle, TrainingRow } from "../training/TrainingRow";
 
 export function TodayView() {
@@ -47,6 +48,8 @@ export function TodayView() {
           <QuickAction icon={<Receipt size={16} />} label="Gasto" onClick={() => quick("expense")} />
         </div>
       </div>
+
+      <GettingStarted />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Tile label="Compromissos" value={String(events.length)} hint={events.length ? nextEventHint(data) : "agenda livre"} onClick={() => navigate("agenda/day")} />

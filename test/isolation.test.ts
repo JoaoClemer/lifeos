@@ -4,7 +4,7 @@ import { env } from "cloudflare:workers";
 import { Hono } from "hono";
 import { beforeEach, describe, expect, it } from "vitest";
 import { api } from "../src/worker/api";
-import { onAppError } from "../src/worker/index";
+import { onAppError } from "../src/worker/errors";
 import { type AppEnv, makeCtx } from "../src/worker/lib";
 import { handleMcpRequest } from "../src/worker/mcp/server";
 import { getSummary } from "../src/worker/services/summary";
@@ -28,32 +28,39 @@ const LIFEOS_SEED = [
      VALUES (3, 1, 'Exceção Segredo', '2026-10-08T09:00', '2026-10-08T10:00', 2, '2026-10-08T08:00')`,
   "INSERT INTO training_sessions (id, user_id, sport, title, date, instructions) VALUES (1, 1, 'run', 'Treino Segredo', '2026-10-15', 'Instrução Segredo')",
   `INSERT INTO activity_log (user_id, source, action, detail) VALUES (1, 'app', 'teste', '{"nota":"Histórico Segredo"}')`,
+  // Login da pessoa 1: uma passkey e um conector do Claude (id 1)
+  "INSERT INTO passkeys (id, user_id, public_key, device) VALUES ('passkey-pessoa-1', 1, 'chave', 'Aparelho Segredo')",
+  "INSERT INTO mcp_tokens (id, user_id, token_hash, name) VALUES (1, 1, 'hash-pessoa-1', 'Conector Segredo')",
 ];
 
 beforeEach(async () => {
   await resetFinance(env.DB);
   await resetLifeOS(env.DB);
+  await env.DB.batch([env.DB.prepare("DELETE FROM passkeys"), env.DB.prepare("DELETE FROM mcp_tokens"), env.DB.prepare("DELETE FROM invites")]);
   await env.DB.batch([
     ...LIFEOS_SEED.map((s) => env.DB.prepare(s)),
     env.DB.prepare("INSERT INTO users (id, name, role) VALUES (2, 'Outra pessoa', 'member')"),
   ]);
 });
 
-/** Tudo o que é de uma pessoa, tabela por tabela. */
+/** Tudo o que é de uma pessoa, tabela por tabela (com o perfil e os acessos dela). */
 async function dataOf(userId: number): Promise<Record<string, unknown[]>> {
   const out: Record<string, unknown[]> = {};
   for (const t of OWNED_TABLES) out[t] = (await env.DB.prepare(`SELECT * FROM ${t} WHERE user_id = ? ORDER BY rowid`).bind(userId).all()).results;
+  out.users = (await env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(userId).all()).results;
+  for (const t of ["passkeys", "mcp_tokens"]) out[t] = (await env.DB.prepare(`SELECT * FROM ${t} WHERE user_id = ? ORDER BY rowid`).bind(userId).all()).results;
   return out;
 }
 
-const TEXT_COLUMNS = ["name", "description", "title", "person", "note", "notes", "institution", "location", "instructions", "category", "detail"];
+const TEXT_COLUMNS = ["name", "description", "title", "person", "note", "notes", "institution", "location", "instructions", "category", "detail", "device"];
 /** Textos que o próprio sistema grava (iguais para todo mundo). */
 const SYSTEM_TEXTS = new Set(["Saldo inicial", "Atualização de saldo"]);
 
 /** Textos da pessoa (nomes, descrições, títulos...) que não podem aparecer para outra pessoa. */
 async function textsOf(userId: number): Promise<string[]> {
   const texts = new Set<string>();
-  for (const rows of Object.values(await dataOf(userId))) {
+  const { users: _profile, ...data } = await dataOf(userId);
+  for (const rows of Object.values(data)) {
     for (const row of rows as Record<string, unknown>[]) {
       for (const col of TEXT_COLUMNS) {
         const v = row[col];
@@ -74,12 +81,14 @@ function expectNoLeak(body: string, texts: string[], label: string, echoed: unkn
   expect(leaked, `${label} mostrou dados de outra pessoa`).toEqual([]);
 }
 
-/** A API autenticada como `userId` (a fase 1 ainda não tem login por pessoa). */
+/** A API autenticada como `userId` (a pessoa 1 é admin; as outras, não). */
 function apiAs(userId: number) {
   const app = new Hono<AppEnv>();
   app.onError(onAppError);
   app.use(async (c, next) => {
     c.set("userId", userId);
+    c.set("role", userId === OWNER ? "admin" : "member");
+    c.set("timezone", null);
     await next();
   });
   app.route("/api", api);
@@ -148,6 +157,21 @@ const MUTATIONS: Record<string, { body?: unknown; status: number }> = {
   "POST /training": { body: { sport: "run", date: "2026-10-20" }, status: 201 },
   "PATCH /training/:id": { body: { title: "x" }, status: 404 },
   "DELETE /training/:id": { status: 404 },
+  // Conta da própria pessoa (a 2 mexe só na dela)
+  "PATCH /me": { body: { name: "Pessoa 2" }, status: 200 },
+  "POST /me/logout-all": { status: 200 },
+  "DELETE /me": { body: {}, status: 400 },
+  "DELETE /me/passkeys/:id": { status: 404 },
+  "POST /me/passkeys/options": { status: 200 },
+  "POST /me/passkeys/verify": { body: { challengeId: "x", response: { id: "passkey-pessoa-1" } }, status: 401 },
+  "POST /me/mcp-tokens": { body: { name: "Claude" }, status: 201 },
+  "DELETE /me/mcp-tokens/:id": { status: 404 },
+  // Administração: só admin
+  "POST /admin/invites": { body: { name: "x" }, status: 403 },
+  "DELETE /admin/invites/:id": { status: 403 },
+  "POST /admin/users/:id/recovery": { status: 403 },
+  "POST /admin/users/:id/disable": { status: 403 },
+  "POST /admin/users/:id/enable": { status: 403 },
 };
 
 /** Outras referências a dados da pessoa 1 ao criar (além das de MUTATIONS). */
@@ -178,7 +202,7 @@ describe("isolamento entre pessoas", () => {
         r.method === "GET"
           ? await app.request(path + GET_QUERY, {}, env)
           : await app.request(path, m.body === undefined ? { method: r.method } : { method: r.method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(m.body) }, env);
-      const expected = r.method === "GET" ? (r.path.includes(":id") ? 404 : 200) : m.status;
+      const expected = r.method === "GET" ? (r.path.startsWith("/admin") ? 403 : r.path.includes(":id") ? 404 : 200) : m.status;
       expect(res.status, key).toBe(expected);
       expectNoLeak(await res.text(), texts, key);
     }

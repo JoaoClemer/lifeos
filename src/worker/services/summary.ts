@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { AccountTotal, AccountType, Settings, Summary } from "../../shared/types";
 import { type Ctx, mustGet, normalize } from "../lib";
+import { OWNED_TABLES } from "../owned";
 import { listAccounts } from "./accounts";
 import { listExpenses } from "./expenses";
 import { listGoals } from "./goals";
@@ -159,11 +160,7 @@ export async function getSummary(ctx: Ctx, month: string): Promise<Summary> {
 
 /** Backup em JSON de tudo o que é da pessoa. */
 export async function exportAll(ctx: Ctx) {
-  const tables = [
-    "accounts", "recurring", "recurring_months", "installments", "expenses", "receivables", "incomes", "user_month_balances", "goals", "goal_entries", "user_settings",
-    // LifeOS
-    "projects", "tasks", "events", "activity_log", "training_sessions",
-  ];
+  const tables = OWNED_TABLES;
   const results = await ctx.db.batch(tables.map((t) => ctx.db.prepare(`SELECT * FROM ${t} WHERE user_id = ?`).bind(ctx.userId)));
   return {
     exported_at: new Date().toISOString(),

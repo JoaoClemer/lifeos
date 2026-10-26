@@ -1,12 +1,13 @@
 import type { Context } from "hono";
 import { nowIn } from "../shared/datetime";
+import type { Role } from "../shared/users";
 import { monthOf } from "../shared/month";
 
 /** Erro "esperado" (validação, não encontrado...). Vira 400 na API e isError no MCP. */
 export class UserError extends Error {
   constructor(
     message: string,
-    public status: 400 | 404 | 409 = 400,
+    public status: 400 | 401 | 403 | 404 | 409 | 410 = 400,
   ) {
     super(message);
   }
@@ -19,7 +20,7 @@ export class UserError extends Error {
 export const OWNER_USER_ID = 1;
 
 /** Variáveis do Hono: quem está usando. Vem só da autenticação, nunca do corpo ou da URL da requisição. */
-export type AppEnv = { Bindings: Env; Variables: { userId: number } };
+export type AppEnv = { Bindings: Env; Variables: { userId: number; role: Role; timezone: string | null } };
 
 export interface Ctx {
   db: D1Database;
@@ -35,17 +36,23 @@ export interface Ctx {
   source: "app" | "mcp";
 }
 
-export function makeCtx(env: Env, userId: number, source: Ctx["source"] = "app"): Ctx {
+/** `timezone`: fuso da pessoa (null = o padrão do app, TIMEZONE). */
+export function makeCtx(env: Env, userId: number, source: Ctx["source"] = "app", timezone?: string | null): Ctx {
   // Sem dono identificado não há consulta: falha fechado
   if (!Number.isInteger(userId) || userId <= 0) throw new Error("Pessoa não identificada");
-  const timezone = env.TIMEZONE || "America/Sao_Paulo";
+  timezone ||= env.TIMEZONE || "America/Sao_Paulo";
   const now = nowIn(timezone);
   const today = now.slice(0, 10);
   return { db: env.DB, userId, today, month: monthOf(today), timezone, now, source };
 }
 
 /** Ctx de uma requisição autenticada da API. */
-export const ctxOf = (c: Context<AppEnv>): Ctx => makeCtx(c.env, c.get("userId"));
+export const ctxOf = (c: Context<AppEnv>): Ctx => makeCtx(c.env, c.get("userId"), "app", c.get("timezone"));
+
+/** Só o admin (quem administra o LifeOS e convida as pessoas). */
+export function requireAdmin(c: Context<AppEnv>): void {
+  if (c.get("role") !== "admin") throw new UserError("Só quem administra o LifeOS pode fazer isso", 403);
+}
 
 /** Id numérico vindo da URL. */
 export function idParam(v: string): number {

@@ -270,3 +270,39 @@ Resultado: os 73 arquivos ficaram idênticos nos três snapshots. A página `/de
 3. `npm run deploy`.
 4. Conferir que o `resumo_mes` ficou igual.
 
+### Fase 2: contas e login (26/10/2026)
+
+**O que mudou:**
+
+- **Migração `0011_accounts_and_login.sql`:**
+  - `users` ganha fuso, versão das sessões, quem convidou, desativação e último login;
+  - tabelas novas `passkeys`, `invites` (convite e recuperação), `auth_challenges` (desafios de uso único) e `mcp_tokens`.
+- **Login com passkey** via `@simplewebauthn/server` 14.0.3 (sem atestado; aceita as passkeys sincronizadas da Apple e do Google).
+- **Sessão nova**, `u.<id>.<versão>.<emissão>.<HMAC>`, assinada com `SESSION_SECRET` (ou `APP_PASSWORD`, se não houver).
+  - O cookie antigo do dono continua valendo enquanto a versão dele for 0.
+  - A senha de administrador continua como entrada de reserva do dono.
+- **Convites e recuperação** em `#/convite/<token>`, de uso único, válidos por 7 dias. Só o hash fica no banco.
+  - A conta nova nasce com o saldo acumulado começando no mês em que a pessoa entrou.
+- **Conectores do Claude por pessoa** (`/api/me/mcp-tokens`), guardados com hash, revogáveis. O `MCP_TOKEN` continua do dono, e só ele vê o link dele.
+- **Fuso por pessoa:** define o "hoje" do app e do MCP.
+- **Ajustes:**
+  - Sua conta: nome, fuso, passkeys e "sair de todos os aparelhos";
+  - Conectar ao Claude;
+  - Pessoas (admin): convidar, recuperar acesso, desativar;
+  - Privacidade e dados: backup e exclusão da conta.
+- **Hoje:** card de primeiros passos (cartões, salário, Claude).
+
+**Testes:**
+
+- Autenticador de software (`test/fixtures/passkey.ts`): chave P-256 real, atestado `none` e assinatura ECDSA.
+- Cobrem:
+  - convite, link de uso único, convite cancelado e expirado;
+  - login, desafio reaproveitado, assinatura adulterada, passkey desconhecida, resposta para outro desafio;
+  - recuperação, outro aparelho e a última passkey que não pode ser removida;
+  - sair de todos os aparelhos, conta desativada e reativada, cookie antigo do dono, cookie adulterado;
+  - fuso, conectores por pessoa, rotas de admin e exclusão da conta.
+- As rotas novas entraram no teste de isolamento.
+- 189 testes passando.
+
+**Deploy:** antes, `npx wrangler secret put SESSION_SECRET`. Depois do deploy, o dono entra com a senha (ou com a sessão atual) e cadastra a passkey em Ajustes.
+

@@ -4,6 +4,7 @@ import type { Occurrence } from "../shared/agenda";
 import type { Project, Task } from "../shared/tasks";
 import type { TrainingSession } from "../shared/training";
 import type { Account, Expense, Goal, Income, Installment, MonthBalance, Receivable, Recurring } from "../shared/types";
+import type { Me } from "../shared/users";
 import { api } from "./api";
 
 export type FinanceTab = "expense" | "installment" | "recurring" | "receivable" | "income";
@@ -53,7 +54,11 @@ interface Toast {
 }
 
 interface AppState {
-  /** Fuso do servidor (o mesmo do MCP). */
+  /** Quem está usando. */
+  me: Me;
+  /** Recarrega quem está usando (depois de mudar nome ou fuso). */
+  reloadMe: () => void;
+  /** Fuso da pessoa (o mesmo do MCP). */
   timezone: string;
   today: string;
   currentMonth: string;
@@ -79,7 +84,7 @@ function parseRoute(): Route {
   return { view: view || "today", sub: sub || undefined, params: new URLSearchParams(query ?? "") };
 }
 
-export function AppProvider({ children, timezone }: { children: ReactNode; timezone: string }) {
+export function AppProvider({ children, timezone, me, reloadMe }: { children: ReactNode; timezone: string; me: Me; reloadMe: () => void }) {
   const today = useMemo(() => todayIn(timezone), [timezone]);
   const currentMonth = today.slice(0, 7);
   const [month, setMonth] = useState(currentMonth);
@@ -107,6 +112,8 @@ export function AppProvider({ children, timezone }: { children: ReactNode; timez
   }, []);
 
   const value: AppState = {
+    me,
+    reloadMe,
     timezone,
     today,
     currentMonth,
