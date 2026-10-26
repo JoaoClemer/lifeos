@@ -350,3 +350,37 @@ Resultado: os 73 arquivos ficaram idênticos nos três snapshots. A página `/de
 - O snapshot do resumo mudou só com os campos novos zerados.
 - 199 testes passando.
 
+### Fase 4: agenda compartilhada (26/10/2026)
+
+**O que mudou:**
+
+- **Migração `0013_event_participants.sql`:** convidados de um evento ou série, com status `invited`, `accepted` ou `declined`. Entra em `OWNED_TABLES` (é do convidado).
+- **`listOccurrences`** junta os seus eventos com os eventos em que você foi convidado e não recusou. As ocorrências alteradas vêm da série de quem criou.
+  - Eventos de outra pessoa trazem `invite` (dono e status) e saem sem `task_id`.
+  - Os seus trazem `participants` (quantos convidados).
+- **Criar e editar** aceitam `participants` (só pessoas conectadas), sempre aplicados à série.
+  - "Esta e as seguintes" copia os convidados, com as respostas, para a nova série.
+  - Excluir o evento tira de todos (`ON DELETE CASCADE`).
+- **Rotas:** `GET /api/events/:id/participants` (só quem criou) e `POST /api/events/:id/rsvp`.
+- **MCP:**
+  - `criar_evento` ganha `convidar`;
+  - `editar_evento` ganha `convidar` e `desconvidar`;
+  - a agenda mostra "convite de" e o número de convidados;
+  - ferramenta nova `responder_convite`.
+- **Telas:**
+  - campo Convidar no formulário do evento (`PeoplePicker`, reaproveitado nas próximas fases);
+  - selo do convite e número de convidados na linha do evento;
+  - ficha só de leitura com Aceitar e Recusar.
+
+**Testes:**
+
+- `test/modules/shared-agenda.test.ts` (7 casos):
+  - convite sem a tarefa de quem criou, aceitar e recusar;
+  - só pessoas conectadas, e o convidado não edita, não exclui nem vê a lista;
+  - mudar os convidados e excluir o evento;
+  - série com ocorrência movida e cancelada;
+  - divisão da série levando os convidados;
+  - Hoje do convidado;
+  - MCP de ponta a ponta.
+- 206 testes passando.
+

@@ -43,6 +43,7 @@ describe("catálogo", () => {
       "criar_evento",
       "editar_evento",
       "cancelar_evento",
+      "responder_convite",
       "listar_tarefas",
       "criar_tarefa",
       "concluir_tarefa",

@@ -1,10 +1,11 @@
 // Agenda: eventos únicos e séries com repetição. As ocorrências de uma série são calculadas para o intervalo pedido;
 // só as ocorrências alteradas ou canceladas viram linhas próprias (series_id + original_start, únicas por ocorrência).
 import { z } from "zod";
-import type { CalendarEvent, EditScope, Occurrence } from "../../../shared/agenda";
+import type { CalendarEvent, EditScope, Occurrence, Participant } from "../../../shared/agenda";
 import { addDays, addMinutes, diffDays, diffMinutes, fromLocal, isValidDate, isValidLocal } from "../../../shared/datetime";
 import { countBefore, formatRRule, isOccurrence, occurrences, parseRRule, type RRule } from "../../../shared/recurrence";
 import { type Ctx, nn, UserError } from "../../lib";
+import { listConnections } from "../connections/service";
 import { getTask } from "../tasks/service";
 
 /** Texto opcional; vazio vira null. */
@@ -32,6 +33,8 @@ const EventFields = z.object({
   /** Repetição (RRULE, ex.: FREQ=WEEKLY;BYDAY=MO,WE). null = não repete. */
   rrule: z.string().nullable().optional(),
   task_id: z.number().int().nullable().optional(),
+  /** Pessoas conectadas convidadas (ids). Numa série, o convite vale para a série toda. */
+  participants: z.array(z.number().int()).max(30).optional(),
 });
 export const EventInput = EventFields;
 export const EventPatch = EventFields.partial();
@@ -122,6 +125,7 @@ export async function createEvent(ctx: Ctx, input: z.input<typeof EventInput>): 
     )
     .bind(ctx.userId, e.title, nn(e.description), nn(e.location), nn(e.url), nn(e.category), nn(e.color), t.all_day ? 1 : 0, t.start_at, t.end_at, ctx.timezone, rrule, nn(e.task_id))
     .first<{ id: number }>();
+  await applyParticipants(ctx, row!.id, e.participants);
   return getEvent(ctx, row!.id);
 }
 
@@ -143,49 +147,142 @@ function toOccurrence(e: CalendarEvent, extra: Partial<Occurrence> = {}): Occurr
     start_at: e.start_at,
     end_at: e.end_at,
     task_id: e.task_id,
+    invite: null,
+    participants: 0,
     ...extra,
   };
 }
 
-/** Ocorrências que acontecem (ao menos em parte) entre os dias `from` e `to` (inclusive), em ordem. */
+/** Eventos seus ou para os quais você foi convidado(a) e não recusou (?1 = você). */
+const VISIBLE = "(user_id = ?1 OR id IN (SELECT event_id FROM event_participants WHERE user_id = ?1 AND status <> 'declined'))";
+
+/**
+ * Ocorrências que acontecem (ao menos em parte) entre os dias `from` e `to` (inclusive), em ordem.
+ * Inclui eventos de pessoas conectadas que te convidaram (marcados em `invite`, sem a tarefa ligada a eles).
+ */
 export async function listOccurrences(ctx: Ctx, from: string, to: string): Promise<Occurrence[]> {
   if (!isValidDate(from) || !isValidDate(to) || to < from) throw new UserError("Intervalo inválido (use datas YYYY-MM-DD)");
   if (diffDays(from, to) > 400) throw new UserError("Intervalo grande demais (máximo de 400 dias)");
   const wStart = `${from}T00:00`;
   const wEnd = `${addDays(to, 1)}T00:00`;
-  const [singles, series] = await ctx.db.batch<Row>([
+  const [singles, series, invites, counts] = await ctx.db.batch<Row & { owner_id: number }>([
     ctx.db
-      .prepare(`SELECT ${COLS} FROM events WHERE user_id = ? AND series_id IS NULL AND rrule IS NULL AND start_at < ? AND end_at > ?`)
+      .prepare(`SELECT ${COLS}, user_id AS owner_id FROM events WHERE ${VISIBLE} AND series_id IS NULL AND rrule IS NULL AND start_at < ?2 AND end_at > ?3`)
       .bind(ctx.userId, wEnd, wStart),
-    ctx.db.prepare(`SELECT ${COLS} FROM events WHERE user_id = ? AND series_id IS NULL AND rrule IS NOT NULL AND start_at < ?`).bind(ctx.userId, wEnd),
+    ctx.db.prepare(`SELECT ${COLS}, user_id AS owner_id FROM events WHERE ${VISIBLE} AND series_id IS NULL AND rrule IS NOT NULL AND start_at < ?2`).bind(ctx.userId, wEnd),
+    // Convites que você recebeu: de quem é o evento e se já aceitou
+    ctx.db
+      .prepare(
+        `SELECT ep.event_id, ep.status, e.user_id AS owner_id, u.name AS owner_name FROM event_participants ep
+         JOIN events e ON e.id = ep.event_id JOIN users u ON u.id = e.user_id
+         WHERE ep.user_id = ? AND ep.status <> 'declined'`,
+      )
+      .bind(ctx.userId),
+    // Seus eventos: quantas pessoas convidou
+    ctx.db
+      .prepare(
+        `SELECT ep.event_id, COUNT(*) AS n FROM event_participants ep JOIN events e ON e.id = ep.event_id AND e.user_id = ?1
+         WHERE ep.status <> 'declined' AND ep.user_id <> ?1 GROUP BY ep.event_id`,
+      )
+      .bind(ctx.userId),
   ]);
-  const masters = series.results.map(decorate);
+  const inviteOf = new Map(
+    (invites.results as unknown as { event_id: number; status: "invited" | "accepted"; owner_id: number; owner_name: string | null }[]).map((i) => [
+      i.event_id,
+      { owner_id: i.owner_id, owner_name: i.owner_name, status: i.status },
+    ]),
+  );
+  const countOf = new Map((counts.results as unknown as { event_id: number; n: number }[]).map((c) => [c.event_id, c.n]));
+  // Em evento de outra pessoa: com o convite e sem a tarefa dela; nos seus: quantos convidados
+  const shareInfo = (eventId: number, ownerId: number): Partial<Occurrence> =>
+    ownerId === ctx.userId ? { participants: countOf.get(eventId) ?? 0 } : { invite: inviteOf.get(eventId) ?? null, task_id: null };
+
+  const masters = series.results.map((r) => ({ ...decorate(r), owner_id: r.owner_id }));
+  // Ocorrências alteradas: são de quem criou a série
   const exceptions = masters.length
     ? (
         await ctx.db
-          .prepare(`SELECT ${COLS} FROM events WHERE user_id = ? AND series_id IN (${masters.map(() => "?").join(", ")})`)
-          .bind(ctx.userId, ...masters.map((m) => m.id))
+          .prepare(
+            `SELECT ${COLS} FROM events x
+             WHERE x.series_id IN (${masters.map(() => "?").join(", ")}) AND x.user_id = (SELECT m.user_id FROM events m WHERE m.id = x.series_id)`,
+          )
+          .bind(...masters.map((m) => m.id))
           .all<Row>()
       ).results.map(decorate)
     : [];
 
-  const out: Occurrence[] = singles.results.map((r) => toOccurrence(decorate(r)));
+  const out: Occurrence[] = singles.results.map((r) => toOccurrence(decorate(r), shareInfo(r.id, r.owner_id)));
   for (const m of masters) {
     const r = parseRRule(m.rrule!);
     const minutes = diffMinutes(m.start_at, m.end_at);
     const changed = new Set(exceptions.filter((x) => x.series_id === m.id).map((x) => x.original_start));
     for (const start of occurrences(m.start_at, r, addMinutes(wStart, -minutes), wEnd)) {
       if (changed.has(start)) continue;
-      out.push(toOccurrence(m, { occurrence_start: start, start_at: start, end_at: addMinutes(start, minutes) }));
+      out.push(toOccurrence(m, { occurrence_start: start, start_at: start, end_at: addMinutes(start, minutes), ...shareInfo(m.id, m.owner_id) }));
     }
   }
-  const rrules = new Map(masters.map((m) => [m.id, m.rrule]));
+  const masterOf = new Map(masters.map((m) => [m.id, m]));
   for (const x of exceptions) {
-    if (!x.cancelled && x.start_at < wEnd && x.end_at > wStart) out.push(toOccurrence(x, { rrule: rrules.get(x.series_id!) ?? null }));
+    const m = masterOf.get(x.series_id!)!;
+    if (!x.cancelled && x.start_at < wEnd && x.end_at > wStart) out.push(toOccurrence(x, { rrule: m.rrule, ...shareInfo(m.id, m.owner_id) }));
   }
   return out.sort(
     (a, b) => a.start_at.localeCompare(b.start_at) || Number(b.all_day) - Number(a.all_day) || a.title.localeCompare(b.title) || a.event_id - b.event_id,
   );
+}
+
+// ---------- convidados ----------
+
+/** Convidados de um evento seu (em série, use o id da série). */
+export async function listParticipants(ctx: Ctx, eventId: number): Promise<Participant[]> {
+  const ev = await getEvent(ctx, eventId);
+  const rows = await ctx.db
+    .prepare(
+      `SELECT ep.user_id, u.name, ep.status FROM event_participants ep JOIN users u ON u.id = ep.user_id
+       JOIN events e ON e.id = ep.event_id AND e.user_id = ? WHERE ep.event_id = ? ORDER BY u.name COLLATE NOCASE`,
+    )
+    .bind(ctx.userId, ev.series_id ?? ev.id)
+    .all<Participant>();
+  return rows.results;
+}
+
+async function applyParticipants(ctx: Ctx, eventId: number, userIds: number[] | undefined): Promise<void> {
+  if (userIds !== undefined) await ctx.db.batch(await participantStatements(ctx, eventId, userIds));
+}
+
+/** Comandos para deixar os convidados do evento exatamente como `userIds` (só pessoas conectadas). Quem continua mantém a resposta. */
+async function participantStatements(ctx: Ctx, eventId: number, userIds: number[]): Promise<D1PreparedStatement[]> {
+  const ids = [...new Set(userIds)];
+  if (ids.length) {
+    const connected = new Set((await listConnections(ctx)).map((c) => c.user_id));
+    const outsider = ids.find((id) => !connected.has(id));
+    if (outsider) throw new UserError("Só dá para convidar pessoas conectadas a você", 404);
+  }
+  return [
+    ctx.db
+      .prepare(
+        `DELETE FROM event_participants WHERE event_id = ?1 AND user_id <> ?2 ${ids.length ? `AND user_id NOT IN (${ids.map(() => "?").join(", ")})` : ""}
+         AND EXISTS (SELECT 1 FROM events e WHERE e.id = ?1 AND e.user_id = ?2)`,
+      )
+      .bind(eventId, ctx.userId, ...ids),
+    ...ids.map((id) =>
+      ctx.db
+        .prepare(
+          `INSERT OR IGNORE INTO event_participants (event_id, user_id)
+           SELECT e.id, ? FROM events e WHERE e.id = ? AND e.user_id = ?`,
+        )
+        .bind(id, eventId, ctx.userId),
+    ),
+  ];
+}
+
+/** Aceitar ou recusar um convite (em série, vale para a série toda). Recusado, o evento sai da sua agenda. */
+export async function respondInvite(ctx: Ctx, eventId: number, status: "accepted" | "declined"): Promise<void> {
+  const res = await ctx.db
+    .prepare("UPDATE event_participants SET status = ?, responded_at = datetime('now') WHERE event_id = ? AND user_id = ?")
+    .bind(status, eventId, ctx.userId)
+    .run();
+  if (!res.meta.changes) throw new UserError(`Convite para o evento ${eventId} não encontrado`, 404);
 }
 
 /** Evento com o mesmo título e início criado há pouco (evita duplicar quando o Claude repete uma chamada). */
@@ -300,6 +397,7 @@ export async function updateEvent(ctx: Ctx, id: number, patch: z.input<typeof Ev
   if (!ev.rrule && !ev.series_id) {
     const t = patchedTiming(ev, p, ev.timezone) ?? ev;
     await updateStmt(ctx, id, { ...fieldsOf(ev, p, t), ...(newRule !== undefined ? { rrule: newRule } : {}) }).run();
+    await applyParticipants(ctx, id, p.participants);
     return getEvent(ctx, id);
   }
 
@@ -315,6 +413,7 @@ export async function updateEvent(ctx: Ctx, id: number, patch: z.input<typeof Ev
     const fields = fieldsOf(base, p, t);
     if (exception) {
       await updateStmt(ctx, exception.id, { ...fields, cancelled: 0 }).run();
+      await applyParticipants(ctx, series.id, p.participants);
       return getEvent(ctx, exception.id);
     }
     const row = await ctx.db
@@ -324,6 +423,7 @@ export async function updateEvent(ctx: Ctx, id: number, patch: z.input<typeof Ev
       )
       .bind(...Object.values(fields), series.timezone, series.id, occ, ctx.userId)
       .first<{ id: number }>();
+    await applyParticipants(ctx, series.id, p.participants);
     return getEvent(ctx, row!.id);
   }
 
@@ -343,6 +443,7 @@ export async function updateEvent(ctx: Ctx, id: number, patch: z.input<typeof Ev
       updateStmt(ctx, series.id, { ...fieldsOf(series, p, t), ...(newRule !== undefined ? { rrule: newRule } : {}) }),
       ...(timingChanged ? [ctx.db.prepare("DELETE FROM events WHERE series_id = ? AND user_id = ?").bind(series.id, ctx.userId)] : []),
     ]);
+    await applyParticipants(ctx, series.id, p.participants);
     return getEvent(ctx, series.id);
   }
 
@@ -367,7 +468,17 @@ export async function updateEvent(ctx: Ctx, id: number, patch: z.input<typeof Ev
       : ctx.db.prepare("DELETE FROM events WHERE series_id = ? AND original_start >= ? AND user_id = ?").bind(series.id, occ, ctx.userId),
     updateStmt(ctx, series.id, { rrule: formatRRule(before) }),
   ]);
-  return getEvent(ctx, results[0].results[0].id);
+  // A nova série leva os mesmos convidados (com as respostas deles)
+  const newId = results[0].results[0].id;
+  await ctx.db
+    .prepare(
+      `INSERT OR IGNORE INTO event_participants (event_id, user_id, status)
+       SELECT ?1, ep.user_id, ep.status FROM event_participants ep JOIN events e ON e.id = ep.event_id AND e.user_id = ?3 WHERE ep.event_id = ?2`,
+    )
+    .bind(newId, series.id, ctx.userId)
+    .run();
+  await applyParticipants(ctx, newId, p.participants);
+  return getEvent(ctx, newId);
 }
 
 /** Exclui um evento. Em séries, `scope`: this (cancela só a ocorrência), following (encerra a série antes dela) ou all. */

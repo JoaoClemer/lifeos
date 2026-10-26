@@ -1,9 +1,10 @@
-import { useState } from "react";
-import { EVENT_COLORS, type EditScope, lastDay, type Occurrence } from "../../../shared/agenda";
+import { useEffect, useState } from "react";
+import { EVENT_COLORS, type EditScope, lastDay, type Occurrence, type Participant } from "../../../shared/agenda";
 import { addMinutes, diffMinutes, nowIn } from "../../../shared/datetime";
 import type { Task } from "../../../shared/tasks";
 import { api } from "../../api";
 import { FormFooter } from "../../forms/common";
+import { PeoplePicker } from "../../PeoplePicker";
 import { initialRepeat, RepeatPicker, repeatRRule, repeatValid } from "../../RepeatPicker";
 import { type EventDefaults, useApp, useData, useMutation } from "../../state";
 import { Button, cx, Field, Segmented, TextArea, TextInput, Toggle } from "../../ui";
@@ -39,6 +40,14 @@ export function EventForm({ item, defaults, onDone }: { item?: Occurrence; defau
   const [taskId, setTaskId] = useState<number | null>(item?.task_id ?? defaults?.taskId ?? null);
   const [scope, setScope] = useState<EditScope>("this");
   const task = useData<Task>(taskId ? `/api/tasks/${taskId}` : null).data;
+  // Convidados (pessoas conectadas). Numa série, valem para a série toda.
+  const current = useData<Participant[]>(item ? `/api/events/${item.event_id}/participants` : null).data;
+  const [people, setPeople] = useState<number[] | null>(item ? null : []);
+  useEffect(() => {
+    if (current && people === null) setPeople(current.filter((p) => p.status !== "declined").map((p) => p.user_id));
+  }, [current, people]);
+  const originalPeople = (current ?? []).filter((p) => p.status !== "declined").map((p) => p.user_id);
+  const peopleChanged = people !== null && JSON.stringify([...people].sort()) !== JSON.stringify([...originalPeople].sort());
 
   const recurring = !!item?.rrule;
   const repeatLocked = recurring && scope === "this";
@@ -69,7 +78,7 @@ export function EventForm({ item, defaults, onDone }: { item?: Occurrence; defau
   async function save() {
     if (!valid) return;
     if (!item) {
-      if (await run(() => api.post("/api/events", { ...fields, ...timing, rrule }), "Evento criado")) onDone();
+      if (await run(() => api.post("/api/events", { ...fields, ...timing, rrule, participants: people ?? [] }), "Evento criado")) onDone();
       return;
     }
     // Só envia horário e repetição se mudaram: assim alterações individuais de uma série são preservadas quando possível
@@ -79,6 +88,7 @@ export function EventForm({ item, defaults, onDone }: { item?: Occurrence; defau
     const body: Record<string, unknown> = { ...fields };
     if (JSON.stringify(timing) !== JSON.stringify(originalTiming)) Object.assign(body, timing);
     if (!repeatLocked && rrule !== item.rrule) body.rrule = rrule;
+    if (peopleChanged) body.participants = people;
     if (recurring) Object.assign(body, { scope, occurrence_start: item.occurrence_start });
     if (await run(() => api.patch(`/api/events/${item.event_id}`, body), "Evento salvo")) onDone();
   }
@@ -149,6 +159,18 @@ export function EventForm({ item, defaults, onDone }: { item?: Occurrence; defau
           <p className="text-sm text-muted">Para mudar a repetição, escolha “Este e os próximos” ou “Todos”.</p>
         ) : (
           <RepeatPicker value={repeat} onChange={setRepeat} minDate={startDate} allowCount />
+        )}
+      </Field>
+
+      <Field label="Convidar" hint={recurring ? "Os convidados valem para todas as ocorrências." : "Eles veem o evento na agenda deles e aceitam ou recusam."}>
+        {people === null ? <div className="h-8 animate-pulse rounded-full bg-surface-2" /> : <PeoplePicker value={people} onChange={setPeople} />}
+        {current && current.some((p) => p.status !== "invited") && (
+          <p className="pt-1 text-xs text-muted">
+            {current
+              .filter((p) => p.status !== "invited")
+              .map((p) => `${p.name ?? "Pessoa"} ${p.status === "accepted" ? "aceitou" : "recusou"}`)
+              .join(" · ")}
+          </p>
         )}
       </Field>
 

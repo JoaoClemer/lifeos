@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { type AppEnv, ctxOf, idParam } from "../../lib";
+import { type AppEnv, ctxOf, idParam, UserError } from "../../lib";
 import * as agenda from "./service";
 
 export const agendaRoutes = new Hono<AppEnv>();
@@ -12,6 +12,14 @@ agendaRoutes.get("/events", async (c) => {
 });
 agendaRoutes.get("/events/categories", async (c) => c.json(await agenda.listCategories(ctxOf(c))));
 agendaRoutes.get("/events/:id", async (c) => c.json(await agenda.getEvent(ctxOf(c), idParam(c.req.param("id")))));
+agendaRoutes.get("/events/:id/participants", async (c) => c.json(await agenda.listParticipants(ctxOf(c), idParam(c.req.param("id")))));
+// Convite recebido: aceitar ou recusar (vale para a série toda)
+agendaRoutes.post("/events/:id/rsvp", async (c) => {
+  const { status } = await c.req.json<{ status?: string }>();
+  if (status !== "accepted" && status !== "declined") throw new UserError("status deve ser accepted ou declined");
+  await agenda.respondInvite(ctxOf(c), idParam(c.req.param("id")), status);
+  return c.json({ ok: true });
+});
 agendaRoutes.post("/events", async (c) => c.json(await agenda.createEvent(ctxOf(c), await c.req.json()), 201));
 // Em séries, o corpo leva também `scope` (this | following | all) e `occurrence_start`
 agendaRoutes.patch("/events/:id", async (c) => {

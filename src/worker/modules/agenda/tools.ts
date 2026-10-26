@@ -6,6 +6,7 @@ import { formatPlanDuration, STATUS_LABEL } from "../../../shared/training";
 import { type Ctx, UserError } from "../../lib";
 import { confirmArg, dateArg, dayLabel, needsConfirmation, repeatArg, SCOPES, scopeArg, timeArg, toDate, toRRule, toTime } from "../../mcp/args";
 import { type Tool, tool } from "../../mcp/tool";
+import { resolveConnection } from "../connections/service";
 import { getTask, resolveTask } from "../tasks/service";
 import { getAgenda } from "../today/service";
 import * as agenda from "./service";
@@ -24,7 +25,12 @@ function itemLine(i: AgendaItem): string {
     const ref = [`evento ${i.event_id}`, i.rrule ? `ocorrência ${i.occurrence_start}, repete` : null].filter(Boolean).join(", ");
     const extra = [i.location, i.url, i.category].filter(Boolean).join(" · ");
     const task = i.task ? ` — horário para a tarefa [tarefa ${i.task.id}]${i.task.status === "done" ? " (concluída)" : ""}` : "";
-    return `• ${timeRange(i)} ${i.title}${extra ? ` (${extra})` : ""}${task} [${ref}]`;
+    const shared = i.invite
+      ? ` — convite de ${i.invite.owner_name ?? "pessoa conectada"}${i.invite.status === "invited" ? " (ainda não respondido: use responder_convite)" : " (aceito)"}`
+      : i.participants
+        ? ` — ${i.participants} convidado(s)`
+        : "";
+    return `• ${timeRange(i)} ${i.title}${extra ? ` (${extra})` : ""}${task}${shared} [${ref}]`;
   }
   if (i.kind === "training") {
     const s = i.session;
@@ -60,6 +66,11 @@ const occurrenceArg = z.string().optional().describe("Em evento que se repete: o
 function scopeOf(a: { alcance?: keyof typeof SCOPES; ocorrencia?: string }) {
   if (a.ocorrencia && !isValidLocal(a.ocorrencia.replace(" ", "T"))) throw new UserError("ocorrencia deve ser AAAA-MM-DDTHH:MM, como aparece na agenda");
   return { scope: a.alcance ? SCOPES[a.alcance] : undefined, occurrence_start: a.ocorrencia?.replace(" ", "T") };
+}
+
+/** Ids de pessoas conectadas pelos nomes. */
+async function peopleIds(ctx: Ctx, names: string[]): Promise<number[]> {
+  return Promise.all(names.map(async (n) => (await resolveConnection(ctx, n)).user_id));
 }
 
 export const AGENDA_TOOLS: Tool[] = [
@@ -109,6 +120,7 @@ export const AGENDA_TOOLS: Tool[] = [
       categoria: z.string().optional(),
       repetir: repeatArg.optional(),
       tarefa: z.string().optional().describe("Id ou título de uma tarefa: o evento vira um horário reservado para ela"),
+      convidar: z.array(z.string()).optional().describe("Nomes de pessoas conectadas para convidar"),
     }),
     async run(a, ctx) {
       const t = timingArgs(ctx, a);
@@ -124,8 +136,9 @@ export const AGENDA_TOOLS: Tool[] = [
         category: a.categoria ?? null,
         rrule: a.repetir ? toRRule(ctx, a.repetir) : null,
         task_id: task?.id ?? null,
+        participants: a.convidar ? await peopleIds(ctx, a.convidar) : undefined,
       });
-      return `✅ Evento criado [evento ${e.id}]: ${e.title} — ${dayLabel(e.start_at.slice(0, 10), ctx.today)} ${timeRange(e)}${e.rrule ? ` (repete: ${e.rrule})` : ""}${task ? ` · horário para a tarefa "${task.title}"` : ""}`;
+      return `✅ Evento criado [evento ${e.id}]: ${e.title} — ${dayLabel(e.start_at.slice(0, 10), ctx.today)} ${timeRange(e)}${e.rrule ? ` (repete: ${e.rrule})` : ""}${task ? ` · horário para a tarefa "${task.title}"` : ""}${a.convidar?.length ? ` · convidados: ${a.convidar.join(", ")}` : ""}`;
     },
   }),
 
@@ -150,6 +163,8 @@ export const AGENDA_TOOLS: Tool[] = [
       categoria: z.string().optional(),
       repetir: repeatArg.optional(),
       parar_de_repetir: z.boolean().optional().describe("true para o evento deixar de se repetir (com alcance esta_e_seguintes ou todas)"),
+      convidar: z.array(z.string()).optional().describe("Nomes de pessoas conectadas para convidar (somam aos convidados atuais)"),
+      desconvidar: z.array(z.string()).optional().describe("Nomes de convidados para tirar do evento"),
     }),
     async run(a, ctx) {
       const ev = await agenda.getEvent(ctx, a.evento);
@@ -164,6 +179,12 @@ export const AGENDA_TOOLS: Tool[] = [
         category: a.categoria,
         rrule: a.parar_de_repetir ? null : a.repetir ? toRRule(ctx, a.repetir) : undefined,
       };
+      if (a.convidar?.length || a.desconvidar?.length) {
+        const current = (await agenda.listParticipants(ctx, ev.series_id ?? ev.id)).map((p) => p.user_id);
+        const add = a.convidar ? await peopleIds(ctx, a.convidar) : [];
+        const remove = new Set(a.desconvidar ? await peopleIds(ctx, a.desconvidar) : []);
+        patch.participants = [...new Set([...current, ...add])].filter((id) => !remove.has(id));
+      }
       if (a.data || a.hora_inicio || a.hora_fim || a.duracao_min || a.dia_inteiro !== undefined) {
         const allDay = a.dia_inteiro ?? (ev.all_day && !a.hora_inicio);
         const date = a.data ? toDate(ctx, a.data) : curDate;
@@ -202,6 +223,19 @@ export const AGENDA_TOOLS: Tool[] = [
       if (!a.confirmar) return needsConfirmation(`excluir ${what}.`);
       await agenda.deleteEvent(ctx, ev.id, scope);
       return `🗑️ Excluído: ${what}.`;
+    },
+  }),
+
+  tool({
+    name: "responder_convite",
+    title: "Responder convite de evento",
+    description:
+      "Aceita ou recusa o convite de uma pessoa conectada para um evento dela (o id aparece na agenda, com \"convite de\"). " +
+      "Em evento que se repete, a resposta vale para a série toda. Recusado, o evento sai da sua agenda.",
+    schema: z.object({ evento: z.number().int(), resposta: z.enum(["aceitar", "recusar"]) }),
+    async run(a, ctx) {
+      await agenda.respondInvite(ctx, a.evento, a.resposta === "aceitar" ? "accepted" : "declined");
+      return a.resposta === "aceitar" ? `✅ Convite aceito: o evento ${a.evento} fica na sua agenda.` : `Convite recusado: o evento ${a.evento} saiu da sua agenda.`;
     },
   }),
 ];

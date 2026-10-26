@@ -9,6 +9,7 @@ import { PersonLinkForm } from "./forms/PersonLinkForm";
 import { ReceivableForm } from "./forms/ReceivableForm";
 import { RecurringForm } from "./forms/RecurringForm";
 import { EventForm } from "./modules/agenda/EventForm";
+import { InvitedEvent } from "./modules/agenda/InvitedEvent";
 import { ProjectForm } from "./modules/tasks/ProjectForm";
 import { TaskForm } from "./modules/tasks/TaskForm";
 import { TrainingForm } from "./modules/training/TrainingForm";
@@ -96,8 +97,8 @@ export function SheetHost() {
       );
     case "event":
       return (
-        <Sheet title="Evento" onClose={closeSheet}>
-          <EventForm item={sheet.item} onDone={done} />
+        <Sheet title={sheet.item.invite ? "Convite" : "Evento"} onClose={closeSheet}>
+          {sheet.item.invite ? <InvitedEvent item={sheet.item} onDone={done} /> : <EventForm item={sheet.item} onDone={done} />}
         </Sheet>
       );
     case "project":

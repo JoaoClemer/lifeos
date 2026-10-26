@@ -80,6 +80,14 @@ O LifeOS pode ser usado por pessoas convidadas (amigos, família), cada uma com 
 - **Quem manda nos dados:** a linha continua sendo sua, sem cópias. Só você edita; ela não vê seus cartões nem os outros devedores.
 - **Desfazer:** desligar o nome ou desconectar faz os itens sumirem para ela; os valores continuam com você.
 
+**Agenda compartilhada.** Ao criar ou editar um evento, use **Convidar** para escolher pessoas conectadas.
+
+- O evento aparece na agenda (e no Hoje) delas, com "convite de você".
+- Ao abrir, elas aceitam ou recusam; recusado, sai da agenda delas.
+- Em eventos que se repetem, o convite e a resposta valem para a série. Ocorrências movidas ou canceladas também mudam para os convidados.
+- Só quem criou edita, e a tarefa ligada ao evento não é compartilhada.
+- Pelo Claude: `criar_evento` com `convidar`, `editar_evento` com `convidar` e `desconvidar`, e `responder_convite`.
+
 ### Página dos devedores
 
 Quem te deve pode acompanhar os próprios valores em `https://financas.<seu-subdominio>.workers.dev/devedor`: a pessoa escolhe o nome, digita o código dela e vê o que está em aberto, as próximas parcelas e o que já pagou. Ela não vê cartões, outras pessoas nem nada do resto do app.
