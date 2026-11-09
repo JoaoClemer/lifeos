@@ -8,6 +8,7 @@ import * as balance from "../services/balance";
 import * as expenses from "../services/expenses";
 import * as goals from "../services/goals";
 import * as incomes from "../services/incomes";
+import * as payables from "../services/payables";
 import * as installments from "../services/installments";
 import * as receivables from "../services/receivables";
 import * as recurring from "../services/recurring";
@@ -29,6 +30,15 @@ async function accountFromName(ctx: Ctx, name: string | undefined, useDefault = 
   const s = await summary.getSettings(ctx);
   return s.default_account_id ? accounts.getAccount(ctx, s.default_account_id).catch(() => null) : null;
 }
+
+const splitArg = z
+  .array(
+    z.object({
+      pessoa: z.string().min(1),
+      valor: z.number().positive().optional().describe("Parte da pessoa em reais. Se omitido, divide igualmente entre você e as pessoas sem valor."),
+    }),
+  )
+  .optional();
 
 const accountLabel = (a: Account | null) => (a ? a.name : "sem conta definida");
 
@@ -52,6 +62,11 @@ function balanceLine(b: MonthBalance, month: string): string {
 /** " (parcela 3/10, nov/26)" para devedores parcelados; vazio para à vista. */
 function parcelLabel(r: Receivable): string {
   return r.installment_no ? ` (parcela ${r.installment_no}/${r.installment_total}, ${monthLabel(r.month, true)})` : "";
+}
+
+/** "Ana te deve R$ 50,00" / "você deve R$ 50,00 a Ana" / "vocês estão quites". */
+export function netLabel(who: string, netCents: number): string {
+  return netCents > 0 ? `${who} te deve ${brl(netCents)}` : netCents < 0 ? `você deve ${brl(-netCents)} a ${who}` : "vocês estão quites";
 }
 
 async function accountNames(ctx: Ctx): Promise<Map<number, string>> {
@@ -166,15 +181,7 @@ export const TOOLS: Tool[] = [
       conta: accountArg.optional(),
       data: dateArg.optional(),
       orcamento: z.string().optional().describe('Nome do orçamento a descontar (ex.: "Alimentação", "Transporte")'),
-      dividir_com: z
-        .array(
-          z.object({
-            pessoa: z.string().min(1),
-            valor: z.number().positive().optional().describe("Parte da pessoa em reais. Se omitido, divide igualmente entre você e as pessoas sem valor."),
-          }),
-        )
-        .optional()
-        .describe("Pessoas que vão te pagar uma parte deste gasto"),
+      dividir_com: splitArg.describe("Pessoas que vão te pagar uma parte deste gasto"),
       mes_referencia: monthArg.optional().describe("Força o mês de referência (YYYY-MM). Normalmente não é necessário."),
       observacao: z.string().optional(),
     }),
@@ -213,7 +220,8 @@ export const TOOLS: Tool[] = [
     title: "Lançar compra parcelada",
     description:
       "Cadastra uma compra parcelada. Informe o valor da parcela OU o valor total. " +
-      "Para algo que você já está pagando, informe `parcela_atual` (ex.: está na 3ª de 10 este mês).",
+      "Para algo que você já está pagando, informe `parcela_atual` (ex.: está na 3ª de 10 este mês). " +
+      "Se dividiu a compra com alguém, informe o valor da compra toda e use `dividir_com`: a parte dos outros vira devedor parcelado e o parcelado fica só com a sua parte.",
     schema: z.object({
       descricao: z.string().min(1),
       parcelas: z.number().int().min(1).max(120).describe("Número total de parcelas"),
@@ -222,10 +230,12 @@ export const TOOLS: Tool[] = [
       conta: accountArg.optional(),
       data_compra: dateArg.optional(),
       parcela_atual: z.number().int().min(1).optional().describe("Qual parcela cai no mês atual, para compras já em andamento"),
+      dividir_com: splitArg.describe("Pessoas que vão te pagar uma parte. `valor` na mesma base informada: da parcela (com valor_parcela) ou do total (com valor_total)"),
     }),
     async run(a, ctx) {
       if (!a.valor_parcela && !a.valor_total) throw new UserError("Informe valor_parcela ou valor_total");
       const account = await accountFromName(ctx, a.conta);
+      const splits = splitAmounts(toCents(a.valor_parcela ?? a.valor_total!), a.dividir_com ?? []);
       const i = await installments.createInstallment(ctx, {
         description: a.descricao,
         total_installments: a.parcelas,
@@ -234,10 +244,16 @@ export const TOOLS: Tool[] = [
         account_id: account?.id ?? null,
         purchase_date: a.data_compra,
         current_installment: a.parcela_atual,
+        splits,
       });
+      const shared = splits.length
+        ? `\nSua parte: ${i.total_installments}x de ${brl(i.installment_cents)}. ${splits
+            .map((s) => `${s.person} te deve ${brl(s.amount_cents)}${a.valor_parcela ? " por parcela" : " no total"}`)
+            .join("; ")} (em Devedores, parcelado).`
+        : "";
       return `✅ Parcelado cadastrado [id ${i.id}]: ${i.description} — ${i.total_installments}x de ${brl(i.installment_cents)} em ${accountLabel(
         account,
-      )}, de ${monthLabel(i.first_month)} até ${monthLabel(i.last_month)}. Neste mês: parcela ${i.current}/${i.total_installments}.`;
+      )}, de ${monthLabel(i.first_month)} até ${monthLabel(i.last_month)}. Neste mês: parcela ${i.current}/${i.total_installments}.${shared}`;
     },
   }),
 
@@ -246,7 +262,8 @@ export const TOOLS: Tool[] = [
     title: "Adicionar gasto fixo mensal",
     description:
       "Cadastra um gasto que se repete todo mês (assinatura, conta, etc.). " +
-      "Use `orcamento: true` para um valor reservado do qual você vai descontando gastos ao longo do mês (ex.: R$ 500 de almoço).",
+      "Use `orcamento: true` para um valor reservado do qual você vai descontando gastos ao longo do mês (ex.: R$ 500 de almoço). " +
+      "Se divide a conta com alguém (ex.: assinatura), informe o valor total e use `dividir_com`: todo mês a parte dos outros vira devedor e o fixo fica só com a sua parte.",
     schema: z.object({
       descricao: z.string().min(1),
       valor: z.number().nonnegative().describe("Valor mensal em reais"),
@@ -254,6 +271,7 @@ export const TOOLS: Tool[] = [
       dia: z.number().int().min(1).max(31).optional().describe("Dia de cobrança/vencimento"),
       orcamento: z.boolean().optional(),
       mes_inicio: monthArg.optional(),
+      dividir_com: splitArg.describe("Pessoas que te pagam uma parte todo mês (não se aplica a orçamentos)"),
     }),
     async run(a, ctx) {
       const account = a.orcamento ? null : await accountFromName(ctx, a.conta);
@@ -264,10 +282,12 @@ export const TOOLS: Tool[] = [
         is_budget: a.orcamento ?? false,
         day: a.dia ?? null,
         start_month: a.mes_inicio,
+        splits: splitAmounts(toCents(a.valor), a.dividir_com ?? []),
       });
-      return `✅ ${r.is_budget ? "Orçamento" : "Fixo"} cadastrado [id ${r.id}]: ${r.description} — ${brl(r.amount_cents)}/mês${
+      const shared = r.splits.length ? ` Sua parte: ${brl(r.amount_cents)}/mês; todo mês ${r.splits.map((s) => `${s.person} te deve ${brl(s.amount_cents)}`).join(" e ")}.` : "";
+      return `✅ ${r.is_budget ? "Orçamento" : "Fixo"} cadastrado [id ${r.id}]: ${r.description} — ${brl(r.amount_cents + r.shared_cents)}/mês${
         r.is_budget ? "" : ` em ${accountLabel(account)}`
-      }, a partir de ${monthLabel(r.start_month)}.`;
+      }, a partir de ${monthLabel(r.start_month)}.${shared}`;
     },
   }),
 
@@ -389,7 +409,8 @@ export const TOOLS: Tool[] = [
   tool({
     name: "listar_devedores",
     title: "Listar devedores",
-    description: "Lista quem te deve e quanto (pendentes por padrão). Parcelas futuras de devedores parcelados aparecem separadas.",
+    description: "Lista quem te deve e quanto (pendentes por padrão). Parcelas futuras de devedores parcelados aparecem separadas. " +
+      "Se você também deve a uma dessas pessoas (conectada), mostra o acerto: um valor menos o outro.",
     schema: z.object({ pessoa: z.string().optional(), incluir_recebidos: z.boolean().optional() }),
     annotations: { readOnlyHint: true },
     async run(a, ctx) {
@@ -403,8 +424,8 @@ export const TOOLS: Tool[] = [
       const pending = rows.filter((r) => !r.received_at).reduce((s, r) => s + r.amount_cents, 0);
       const line = (r: Receivable) =>
         `• [${r.id}] ${r.person} — ${r.description}${parcelLabel(r)}: ${brl(r.amount_cents)} (${formatDateBR(r.date)}${
-          r.account_id ? `, ${names.get(r.account_id)}` : ""
-        })${r.received_at ? ` ✔ recebido em ${formatDateBR(r.received_at)}` : ""}${
+          !r.installment_no && r.month !== r.date.slice(0, 7) ? `, mês ${monthLabel(r.month, true)}` : ""
+        }${r.account_id ? `, ${names.get(r.account_id)}` : ""})${r.received_at ? ` ✔ recebido em ${formatDateBR(r.received_at)}` : ""}${
           !r.received_at && r.paid_claimed_at ? ` ⏳ ${r.person} disse que pagou em ${formatDateBR(r.paid_claimed_at)} (confirme com marcar_recebido)` : ""
         }${!r.received_at && r.disputed_at ? ` ⚠️ contestado por ${r.person}: ${r.dispute_note}` : ""}`;
       const out = [`Total pendente: ${brl(pending)}`, ...rows.map(line)];
@@ -414,6 +435,13 @@ export const TOOLS: Tool[] = [
           `Parcelas futuras (ainda não venceram): ${brl(future.reduce((s, r) => s + r.amount_cents, 0))}`,
           ...future.sort((x, y) => x.month.localeCompare(y.month) || x.id - y.id).map(line),
         );
+      }
+      // Acerto com pessoas conectadas: o que elas te devem menos o que você deve a elas
+      const net = [...(await payables.netByPerson(ctx)).values()].filter((n) => n.they_owe_cents && n.i_owe_cents);
+      const shown = new Set(all.map((r) => r.debtor_user_id));
+      for (const n of net.filter((x) => shown.has(x.user_id))) {
+        const who = all.find((r) => r.debtor_user_id === n.user_id)!.person;
+        out.push("", `Acerto com ${who}: te deve ${brl(n.they_owe_cents)} e você deve ${brl(n.i_owe_cents)} a ela → ${netLabel(who, n.net_cents)}.`);
       }
       return out.join("\n");
     },
@@ -616,7 +644,7 @@ export const TOOLS: Tool[] = [
         }
         case "parcelado": {
           const i = await installments.deleteInstallment(ctx, id);
-          return `🗑️ Parcelado removido: ${i.description}.`;
+          return `🗑️ Parcelado removido: ${i.description}.${i.shared_cents ? " As parcelas pendentes de quem dividia com você também foram removidas." : ""}`;
         }
         case "fixo": {
           const r = await recurring.deleteRecurring(ctx, id);
@@ -651,7 +679,9 @@ export const TOOLS: Tool[] = [
   tool({
     name: "listar_metas",
     title: "Listar metas e investimentos",
-    description: "Lista metas/investimentos com saldo, alvo, aporte mensal, se o aporte do mês foi feito e a previsão para atingir a meta.",
+    description:
+      "Lista metas/investimentos com saldo, alvo, aporte mensal, se o aporte do mês foi feito e a previsão para atingir a meta. " +
+      "Em metas em conjunto, mostra quanto cada pessoa já aportou (sem rendimentos).",
     schema: z.object({ mes: monthArg.optional() }),
     annotations: { readOnlyHint: true },
     async run(a, ctx) {
@@ -673,6 +703,10 @@ export const TOOLS: Tool[] = [
           if (g.members.length) {
             const others = g.members.filter((p) => p.id !== ctx.userId).map((p) => p.name ?? "pessoa");
             parts.push(`— em conjunto${g.owner ? ` (meta de ${g.owner.name ?? "pessoa conectada"})` : ""} com ${others.join(", ")}`);
+            const contributed = g.members.reduce((s, p) => s + p.total_contrib_cents, 0);
+            parts.push(
+              `— aportado por pessoa: ${g.members.map((p) => `${p.id === ctx.userId ? "você" : (p.name ?? "pessoa")} ${brl(p.total_contrib_cents)}`).join(", ")}; saldo inicial, rendimentos e ajustes: ${brl(g.balance_cents - contributed)}`,
+            );
           }
           return parts.join(" ");
         }),

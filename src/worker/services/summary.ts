@@ -9,7 +9,7 @@ import { listInstallments } from "./installments";
 import { getMonthBalance } from "./balance";
 import { listIncomes } from "./incomes";
 import { listPayables, payablesByMonth } from "./payables";
-import { isDue, listPeople, listReceivables } from "./receivables";
+import { isDue, listPeople, listReceivables, syncRecurringSplits } from "./receivables";
 import { listRecurring } from "./recurring";
 
 export const SettingsPatch = z.object({
@@ -46,6 +46,7 @@ export async function updateSettings(ctx: Ctx, patch: z.input<typeof SettingsPat
  * - por conta = o que efetivamente cai em cada cartão/conta (inclui a parte dos devedores passada no cartão)
  */
 export async function getSummary(ctx: Ctx, month: string): Promise<Summary> {
+  await syncRecurringSplits(ctx);
   // Parcelas de devedores parcelados só contam como pendentes a partir do mês delas
   const refMonth = month > ctx.month ? month : ctx.month;
   const [accounts, installments, recurring, expenses, receivablesMonth, allPending, goals, settings, peopleNames, incomes, balance, owedPending, owedByMonth] = await Promise.all([
@@ -93,6 +94,8 @@ export async function getSummary(ctx: Ctx, month: string): Promise<Summary> {
     } else {
       recurringTotal += r.month_amount_cents;
       add(r.account_id, r.month_amount_cents);
+      // Fixo dividido: a parte dos outros também cai na conta (nos meses já gerados ela vem dos devedores, abaixo)
+      if (month > ctx.month && r.account_id && (!r.end_month || r.end_month >= month)) add(r.account_id, r.shared_cents);
     }
   }
 

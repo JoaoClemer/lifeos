@@ -5,6 +5,7 @@ import { formatBRL as brl, toCents } from "../../../shared/money";
 import { formatDateBR, monthLabel } from "../../../shared/month";
 import type { Ctx } from "../../lib";
 import { type Tool, tool } from "../../mcp/tool";
+import { netLabel } from "../../mcp/tools";
 import * as goals from "../../services/goals";
 import * as payables from "../../services/payables";
 import * as receivables from "../../services/receivables";
@@ -23,7 +24,8 @@ function payableLine(p: Payable): string {
         : st === "received"
           ? ` ✔ recebido em ${formatDateBR(p.received_at!)}`
           : "";
-  return `• [${p.id}] ${p.description}${parcel}: ${brl(p.amount_cents)} (${formatDateBR(p.date)})${status}`;
+  const month = !p.installment_no && p.month !== p.date.slice(0, 7) ? `, mês ${monthLabel(p.month, true)}` : "";
+  return `• [${p.id}] ${p.description}${parcel}: ${brl(p.amount_cents)} (${formatDateBR(p.date)}${month})${status}`;
 }
 
 async function creditorId(ctx: Ctx, name: string | undefined): Promise<number | undefined> {
@@ -36,7 +38,8 @@ export const DEBT_TOOLS: Tool[] = [
     title: "O que eu devo",
     description:
       "Lista o que você deve a pessoas conectadas (gastos que elas passaram no cartão e dividiram com você), por pessoa. " +
-      "Mostra o que já está em aberto, as parcelas futuras e se você já marcou como pago. Esses valores contam nos seus gastos do mês.",
+      "Mostra o mês de cada valor (o mês da fatura de quem passou no cartão), o que já está em aberto, as parcelas futuras, se você já marcou como pago " +
+      "e o acerto quando a pessoa também te deve. Esses valores contam nos seus gastos do mês.",
     schema: z.object({ pessoa: z.string().optional().describe("Nome da pessoa a quem você deve"), incluir_pagas: z.boolean().optional() }),
     annotations: { readOnlyHint: true },
     async run(a, ctx) {
@@ -46,11 +49,15 @@ export const DEBT_TOOLS: Tool[] = [
       for (const p of all) byCreditor.set(p.creditor_name ?? `Pessoa ${p.creditor_id}`, [...(byCreditor.get(p.creditor_name ?? `Pessoa ${p.creditor_id}`) ?? []), p]);
       const open = all.filter((p) => p.due && !p.received_at);
       const out = [`Em aberto: ${brl(sum(open))}`];
+      const net = await payables.netByPerson(ctx);
       for (const [name, items] of byCreditor) {
         const due = items.filter((p) => p.due || p.received_at);
         const future = items.filter((p) => !p.due && !p.received_at);
         out.push("", `${name}: ${brl(sum(due.filter((p) => !p.received_at)))} em aberto`, ...due.map(payableLine));
         if (future.length) out.push(`  Parcelas futuras: ${brl(sum(future))}`, ...future.map(payableLine));
+        // Acerto: a pessoa também te deve (está nos seus devedores)
+        const n = net.get(items[0].creditor_id);
+        if (n?.they_owe_cents) out.push(`  Acerto: ${name} te deve ${brl(n.they_owe_cents)} → ${netLabel(name, n.net_cents)}.`);
       }
       return out.join("\n");
     },

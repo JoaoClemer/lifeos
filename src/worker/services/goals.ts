@@ -96,7 +96,7 @@ async function membersOf(ctx: Ctx, goalIds: number[], month: string): Promise<Ma
   const out = new Map<number, GoalMember[]>();
   if (!goalIds.length) return out;
   const ph = goalIds.map(() => "?").join(", ");
-  const [people, contrib] = await ctx.db.batch<{ goal_id: number; id: number; name: string | null; role: "owner" | "member"; monthly_cents: number | null; total: number }>([
+  const [people, contrib, total] = await ctx.db.batch<{ goal_id: number; id: number; name: string | null; role: "owner" | "member"; monthly_cents: number | null; total: number }>([
     ctx.db
       .prepare(
         `SELECT g.id AS goal_id, u.id, u.name, 'owner' AS role, g.monthly_cents FROM goals g JOIN users u ON u.id = g.user_id WHERE g.id IN (${ph})
@@ -110,11 +110,18 @@ async function membersOf(ctx: Ctx, goalIds: number[], month: string): Promise<Ma
          WHERE goal_id IN (${ph}) AND month = ? AND kind IN ('contribution', 'withdrawal') GROUP BY goal_id, user_id`,
       )
       .bind(...goalIds, month),
+    ctx.db
+      .prepare(
+        `SELECT goal_id, user_id AS id, SUM(amount_cents) AS total FROM goal_entries
+         WHERE goal_id IN (${ph}) AND kind IN ('contribution', 'withdrawal') GROUP BY goal_id, user_id`,
+      )
+      .bind(...goalIds),
   ]);
   const contribOf = new Map(contrib.results.map((c) => [`${c.goal_id}|${c.id}`, c.total]));
+  const totalOf = new Map(total.results.map((c) => [`${c.goal_id}|${c.id}`, c.total]));
   for (const p of people.results) {
     const list = out.get(p.goal_id) ?? [];
-    list.push({ id: p.id, name: p.name, role: p.role, monthly_cents: p.monthly_cents, month_contrib_cents: contribOf.get(`${p.goal_id}|${p.id}`) ?? 0 });
+    list.push({ id: p.id, name: p.name, role: p.role, monthly_cents: p.monthly_cents, month_contrib_cents: contribOf.get(`${p.goal_id}|${p.id}`) ?? 0, total_contrib_cents: totalOf.get(`${p.goal_id}|${p.id}`) ?? 0 });
     out.set(p.goal_id, list);
   }
   return out;

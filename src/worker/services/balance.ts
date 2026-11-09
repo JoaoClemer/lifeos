@@ -5,6 +5,7 @@ import { addMonths, MONTH_RE } from "../../shared/month";
 import type { MonthBalance } from "../../shared/types";
 import { type Ctx, UserError } from "../lib";
 import { decorateGoal, type GoalCalc } from "./goals";
+import { syncRecurringSplits } from "./receivables";
 
 export const OpeningInput = z.object({
   opening_cents: z.number().int(),
@@ -28,6 +29,7 @@ interface Bulk {
 }
 
 async function loadBulk(ctx: Ctx): Promise<Bulk> {
+  await syncRecurringSplits(ctx);
   // Todas filtram pelo dono (?1)
   const sql = [
     "SELECT installment_cents, first_month, last_month FROM installments WHERE user_id = ?1",

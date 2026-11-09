@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { formatBRL } from "../../shared/money";
 import { monthTitle } from "../../shared/month";
 import type { Recurring } from "../../shared/types";
@@ -6,6 +6,7 @@ import { api } from "../api";
 import { useApp, useMutation } from "../state";
 import { Button, Field, MonthStepper, MoneyInput, Segmented, TextInput, Toggle } from "../ui";
 import { AccountChips, confirmDelete, DayInput, FormFooter, useSettings } from "./common";
+import { computeSplits, EMPTY_SPLIT, SplitFields, type SplitRow } from "./SplitFields";
 
 export function RecurringForm({ item, onDone }: { item?: Recurring; onDone: () => void }) {
   const { month } = useApp();
@@ -13,7 +14,10 @@ export function RecurringForm({ item, onDone }: { item?: Recurring; onDone: () =
   const { run, busy } = useMutation();
 
   const [description, setDescription] = useState(item?.description ?? "");
-  const [amount, setAmount] = useState<number | null>(item?.amount_cents ?? null);
+  // Fixo dividido: o formulário mostra o valor total; o fixo guarda só a sua parte
+  const [amount, setAmount] = useState<number | null>(item ? item.amount_cents + item.shared_cents : null);
+  const [splitOn, setSplitOn] = useState(!!item?.splits.length);
+  const [rows, setRows] = useState<SplitRow[]>(item?.splits.length ? item.splits.map((s) => ({ person: s.person, amount: s.amount_cents })) : EMPTY_SPLIT);
   const [isBudget, setIsBudget] = useState(!!item?.is_budget);
   const [accountId, setAccountId] = useState<number | null>(item?.account_id ?? null);
   const accountTouched = useRef(!!item);
@@ -28,7 +32,9 @@ export function RecurringForm({ item, onDone }: { item?: Recurring; onDone: () =
     if (!accountTouched.current && settings?.default_account_id) setAccountId(settings.default_account_id);
   }, [settings]);
 
-  const valid = amount != null && description.trim();
+  const split = useMemo(() => computeSplits(amount ?? 0, splitOn && !isBudget ? rows : []), [amount, rows, splitOn, isBudget]);
+  const splitChanged = JSON.stringify(split.splits) !== JSON.stringify(item?.splits ?? []);
+  const valid = amount != null && description.trim() && split.mine >= 0;
 
   async function save() {
     if (!valid) return;
@@ -42,8 +48,9 @@ export function RecurringForm({ item, onDone }: { item?: Recurring; onDone: () =
             account_id: isBudget ? null : accountId,
             day,
             start_month: startMonth,
+            ...(split.splits.length ? { splits: split.splits } : {}),
           }),
-        isBudget ? "Orçamento criado" : "Fixo cadastrado",
+        isBudget ? "Orçamento criado" : split.splits.length ? `Fixo cadastrado! Todo mês a parte de ${split.splits.map((s) => s.person).join(" e ")} vai para Devedores` : "Fixo cadastrado",
       );
       if (ok) onDone();
       return;
@@ -51,7 +58,8 @@ export function RecurringForm({ item, onDone }: { item?: Recurring; onDone: () =
     const ok = await run(async () => {
       await api.patch(`/api/recurring/${item.id}`, {
         description,
-        amount_cents: amount,
+        amount_cents: split.mine,
+        ...(splitChanged ? { splits: split.splits } : {}),
         is_budget: isBudget,
         account_id: isBudget ? null : accountId,
         day,
@@ -98,7 +106,7 @@ export function RecurringForm({ item, onDone }: { item?: Recurring; onDone: () =
         />
       </Field>
       <div className="grid grid-cols-[1fr_6rem] gap-3">
-        <Field label={isBudget ? "Valor reservado por mês" : item ? "Valor padrão" : "Valor mensal"} htmlFor="rec-amount">
+        <Field label={isBudget ? "Valor reservado por mês" : split.splits.length ? "Valor mensal (total)" : item ? "Valor padrão" : "Valor mensal"} htmlFor="rec-amount">
           <MoneyInput id="rec-amount" value={amount} onChange={setAmount} />
         </Field>
         <Field label="Dia" htmlFor="rec-day">
@@ -118,14 +126,27 @@ export function RecurringForm({ item, onDone }: { item?: Recurring; onDone: () =
         </Field>
       )}
 
+      {!isBudget && (
+        <SplitFields
+          on={splitOn}
+          onToggle={setSplitOn}
+          rows={rows}
+          onRows={setRows}
+          total={amount}
+          split={split}
+          description="Todo mês a parte dos outros vai para Devedores"
+          mineLabel="Sua parte por mês"
+        />
+      )}
+
       {item && (
         <div className="space-y-3 rounded-2xl border border-border p-3">
           <p className="text-sm font-semibold">Ajustes de {monthTitle(month)}</p>
           <Field
-            label="Valor só neste mês (opcional)"
+            label={split.splits.length ? "Sua parte só neste mês (opcional)" : "Valor só neste mês (opcional)"}
             hint={monthAmount != null ? <button type="button" className="font-semibold text-accent" onClick={() => setMonthAmount(null)}>Voltar ao valor padrão</button> : "Ex.: a conta de luz deste mês veio diferente."}
           >
-            <MoneyInput value={monthAmount} onChange={setMonthAmount} placeholder={amount != null ? formatBRL(amount).replace("R$", "").trim() : "0,00"} />
+            <MoneyInput value={monthAmount} onChange={setMonthAmount} placeholder={amount != null ? formatBRL(split.mine).replace("R$", "").trim() : "0,00"} />
           </Field>
           {!isBudget && <Toggle checked={paid} onChange={setPaid} label="Pago neste mês" />}
         </div>

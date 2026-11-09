@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { formatBRL } from "../../shared/money";
 import { addMonths, monthLabel, referenceMonth } from "../../shared/month";
 import type { Installment } from "../../shared/types";
@@ -6,6 +6,7 @@ import { api } from "../api";
 import { useApp, useMutation } from "../state";
 import { Field, inputCls, MonthStepper, MoneyInput, Segmented, TextInput, Toggle } from "../ui";
 import { AccountChips, confirmDelete, FormFooter, NumberInput, useAccounts, useSettings } from "./common";
+import { computeSplits, EMPTY_SPLIT, SplitFields, type SplitRow } from "./SplitFields";
 
 export function InstallmentForm({ item, onDone }: { item?: Installment; onDone: () => void }) {
   const { today, month: viewMonth } = useApp();
@@ -23,16 +24,21 @@ export function InstallmentForm({ item, onDone }: { item?: Installment; onDone: 
   const [current, setCurrent] = useState(1);
   const [purchaseDate, setPurchaseDate] = useState(item?.purchase_date ?? today);
   const [firstMonth, setFirstMonth] = useState(item?.first_month ?? viewMonth);
+  // Compra dividida: a parte dos outros segue a mesma base do valor digitado (da parcela ou do total)
+  const [splitOn, setSplitOn] = useState(false);
+  const [rows, setRows] = useState<SplitRow[]>(EMPTY_SPLIT);
 
   useEffect(() => {
     if (!accountTouched.current && settings?.default_account_id) setAccountId(settings.default_account_id);
   }, [settings]);
 
   const account = accounts.find((a) => a.id === accountId) ?? null;
-  const perInstallment = amount == null ? 0 : mode === "total" ? Math.round(amount / count) : amount;
+  const split = useMemo(() => computeSplits(amount ?? 0, splitOn && !item ? rows : []), [amount, rows, splitOn, item]);
+  const mine = amount == null ? 0 : split.mine;
+  const perInstallment = mode === "total" ? Math.round(mine / count) : mine;
   const first = item ? firstMonth : started ? addMonths(viewMonth, -(current - 1)) : referenceMonth(purchaseDate, account);
   const last = addMonths(first, count - 1);
-  const valid = !!amount && description.trim() && (!started || current <= count);
+  const valid = !!amount && description.trim() && (!started || current <= count) && mine > 0;
 
   async function save() {
     if (!valid) return;
@@ -52,12 +58,13 @@ export function InstallmentForm({ item, onDone }: { item?: Installment; onDone: 
           () =>
             api.post("/api/installments", {
               description,
-              installment_cents: perInstallment,
+              ...(mode === "total" ? { total_cents: amount } : { installment_cents: amount }),
+              ...(split.splits.length ? { splits: split.splits } : {}),
               total_installments: count,
               account_id: accountId,
               ...(started ? { current_installment: current, reference_month: viewMonth } : { purchase_date: purchaseDate }),
             }),
-          "Parcelado cadastrado",
+          split.splits.length ? `Parcelado cadastrado! A parte de ${split.splits.map((s) => s.person).join(" e ")} está em Devedores` : "Parcelado cadastrado",
         );
     if (ok) onDone();
   }
@@ -110,8 +117,27 @@ export function InstallmentForm({ item, onDone }: { item?: Installment; onDone: 
         </div>
       )}
 
+      {!item && (
+        <SplitFields
+          on={splitOn}
+          onToggle={setSplitOn}
+          rows={rows}
+          onRows={setRows}
+          total={amount}
+          split={split}
+          description="A parte dos outros vira devedor parcelado, nos mesmos meses"
+          mineLabel={mode === "total" ? "Sua parte do total" : "Sua parte da parcela"}
+        />
+      )}
+      {item && item.shared_cents > 0 && (
+        <p className="rounded-xl bg-surface-2 p-3 text-sm text-muted">
+          Esta compra foi dividida: <b className="num text-text">{formatBRL(item.shared_cents)}</b> de cada parcela estão em Devedores. O valor acima é só a sua parte.
+        </p>
+      )}
+
       {perInstallment > 0 && (
         <div className="rounded-xl bg-accent-soft p-3 text-sm text-accent">
+          {split.splits.length > 0 && "Sua parte: "}
           <b className="num">
             {count}x de {formatBRL(perInstallment)}
           </b>{" "}

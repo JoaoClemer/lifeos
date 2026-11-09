@@ -1,5 +1,5 @@
 import { ChevronDown, HandCoins, Link2, Plus, Share2 } from "lucide-react";
-import type { Connection, PersonLink } from "../../shared/connections";
+import { type Connection, netDebts, type Payable, type PersonLink } from "../../shared/connections";
 import { useState } from "react";
 import { formatBRL } from "../../shared/money";
 import { formatDateBR, monthLabel } from "../../shared/month";
@@ -10,6 +10,7 @@ import { useAccounts } from "../forms/common";
 import { useApp, useData, useMutation } from "../state";
 import { Avatar, Badge, Button, Card, CheckCircle, cx, Empty, Money, Row, Segmented } from "../ui";
 import { ListSkeleton } from "./ExpensesView";
+import { NetLine } from "./NetLine";
 
 const norm = (s: string) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim();
 const sum = (items: Receivable[]) => items.reduce((s, r) => s + r.amount_cents, 0);
@@ -33,6 +34,9 @@ export function ReceivablesView() {
   const hasConnections = (useData<Connection[]>("/api/connections").data ?? []).length > 0;
   const accounts = new Map(useAccounts().map((a) => [a.id, a.name]));
   const { run } = useMutation();
+  // Acerto: o que você também deve a cada pessoa conectada
+  const owed = useData<(Payable & { due: boolean })[]>("/api/payables?status=pending").data ?? [];
+  const net = netDebts(tab === "pending" ? (list ?? []) : [], owed, currentMonth);
 
   const mark = (ids: number[], undo = false, msg?: string) => run(() => api.post("/api/receivables/mark-received", { ids, undo }), msg);
 
@@ -72,7 +76,10 @@ export function ReceivablesView() {
               {r.installment_no}/{r.installment_total} · {monthLabel(r.month, true)}
             </Badge>
           ) : (
-            <span>{formatDateBR(r.date)}</span>
+            <span>
+              {formatDateBR(r.date)}
+              {r.month !== r.date.slice(0, 7) && ` · ${monthLabel(r.month, true)}`}
+            </span>
           )}
           {r.account_id && <span>{accounts.get(r.account_id)}</span>}
           {r.received_at && <Badge tone="success">recebido {formatDateBR(r.received_at)}</Badge>}
@@ -184,6 +191,7 @@ export function ReceivablesView() {
                   )}
                 </div>
               </div>
+              {tab === "pending" && <NetLine name={g.person} net={net.get(links.get(personKey(g.person))?.linked_user_id ?? 0)} />}
               <div className="divide-y divide-border">{g.items.map(row)}</div>
               {g.future.length > 0 && <FutureInstallments items={g.future} renderRow={row} bordered={g.items.length > 0} />}
             </Card>

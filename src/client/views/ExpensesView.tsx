@@ -203,6 +203,7 @@ function InstallmentList() {
                     <span className="num font-medium text-text">{status}</span>
                     {i.current <= i.total_installments && <span>até {monthLabel(i.last_month, true)}</span>}
                     {acc && <span>{acc.name}</span>}
+                    {i.shared_cents > 0 && <Badge tone="accent">dividido</Badge>}
                   </>
                 }
                 right={
@@ -284,6 +285,7 @@ function RecurringList() {
                     <>
                       {acc && <span>{acc.name}</span>}
                       {r.day && <span>dia {r.day}</span>}
+                      {r.shared_cents > 0 && <Badge tone="accent">dividido</Badge>}
                       {r.overridden && <Badge tone="warn">ajustado no mês</Badge>}
                       {r.end_month === month && <Badge tone="danger">último mês</Badge>}
                     </>
