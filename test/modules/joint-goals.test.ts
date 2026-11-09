@@ -43,6 +43,15 @@ describe("meta em conjunto", () => {
       ["Dono", "owner", 50000, 20000],
       ["Ana Souza", "member", 30000, 30000],
     ]);
+    // Quanto cada pessoa já aportou no total (resgates descontam; rendimentos e ajustes não entram)
+    await goals.addGoalEntry(ana, g.id, { kind: "contribution", amount_cents: 10000, month: "2026-09" });
+    await goals.addGoalEntry(ana, g.id, { kind: "withdrawal", amount_cents: 10000, month: "2026-09" });
+    await goals.addGoalEntry(owner, g.id, { kind: "contribution", amount_cents: 5000, month: "2026-09" });
+    await goals.addGoalEntry(owner, g.id, { kind: "withdrawal", amount_cents: 5000, month: "2026-09" });
+    expect((await goals.getGoal(ana, g.id, MONTH)).members.map((m) => [m.name, m.total_contrib_cents])).toEqual([
+      ["Dono", 20000],
+      ["Ana Souza", 30000],
+    ]);
     const forOwner = await goals.getGoal(owner, g.id, MONTH);
     expect(forOwner).toMatchObject({ owner: null, monthly_cents: 50000, balance_cents: 50000, month_contrib_cents: 20000 });
     // Previsão com o aporte dos dois (80 mil/mês): faltam 5.500,00

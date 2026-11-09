@@ -1,34 +1,18 @@
-import { UserPlus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatBRL } from "../../shared/money";
 import { monthLabel, referenceMonth } from "../../shared/month";
 import type { Expense, Recurring } from "../../shared/types";
 import { api } from "../api";
 import { useApp, useData, useMutation } from "../state";
-import { Chips, Field, inputCls, LinkButton, MonthStepper, MoneyInput, TextInput, Toggle } from "../ui";
+import { Chips, Field, inputCls, LinkButton, MonthStepper, MoneyInput, TextInput } from "../ui";
 import { AccountChips, confirmDelete, FormFooter, useAccounts, useSettings } from "./common";
-
-interface SplitRow {
-  person: string;
-  amount: number | null;
-}
-
-/** Valor de cada pessoa: quem tem valor fica com ele; o resto é dividido igualmente entre você e os demais. */
-function computeSplits(total: number, rows: SplitRow[]) {
-  const valid = rows.filter((r) => r.person.trim());
-  const fixed = valid.reduce((s, r) => s + (r.amount ?? 0), 0);
-  const flexible = valid.filter((r) => r.amount == null).length;
-  const each = flexible ? Math.floor((total - fixed) / (flexible + 1)) : 0;
-  const splits = valid.map((r) => ({ person: r.person.trim(), amount_cents: r.amount ?? each }));
-  return { splits, mine: total - splits.reduce((s, x) => s + x.amount_cents, 0) };
-}
+import { computeSplits, EMPTY_SPLIT, SplitFields, type SplitRow } from "./SplitFields";
 
 export function ExpenseForm({ item, budgetId, onDone }: { item?: Expense; budgetId?: number; onDone: () => void }) {
   const { today, month: viewMonth } = useApp();
   const accounts = useAccounts();
   const settings = useSettings();
   const budgets = (useData<Recurring[]>(`/api/recurring?month=${item?.month ?? viewMonth}`).data ?? []).filter((r) => r.is_budget);
-  const people = useData<string[]>("/api/people").data ?? [];
   const { run, busy } = useMutation();
 
   const [amount, setAmount] = useState<number | null>(item?.amount_cents ?? null);
@@ -40,7 +24,7 @@ export function ExpenseForm({ item, budgetId, onDone }: { item?: Expense; budget
   const [notes, setNotes] = useState(item?.notes ?? "");
   const [monthOverride, setMonthOverride] = useState<string | null>(null);
   const [splitOn, setSplitOn] = useState(false);
-  const [rows, setRows] = useState<SplitRow[]>([{ person: "", amount: null }]);
+  const [rows, setRows] = useState<SplitRow[]>(EMPTY_SPLIT);
 
   // Conta padrão (ou a última usada no orçamento escolhido, ex.: VR para almoço)
   useEffect(() => {
@@ -143,53 +127,7 @@ export function ExpenseForm({ item, budgetId, onDone }: { item?: Expense; budget
         </Field>
       )}
 
-      {!item && (
-        <div className="rounded-2xl border border-border p-3">
-          <Toggle checked={splitOn} onChange={setSplitOn} label="Dividir com alguém" description="A parte dos outros vai para Devedores" />
-          {splitOn && (
-            <div className="mt-3 space-y-2">
-              <datalist id="people-list">
-                {people.map((p) => (
-                  <option key={p} value={p} />
-                ))}
-              </datalist>
-              {rows.map((r, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <input
-                    list="people-list"
-                    placeholder="Nome"
-                    aria-label="Nome da pessoa"
-                    value={r.person}
-                    onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, person: e.target.value } : x)))}
-                    className={inputCls + " flex-1"}
-                  />
-                  <div className="w-36">
-                    <MoneyInput
-                      value={r.amount}
-                      placeholder={amount ? formatBRL(split.splits[i]?.amount_cents ?? 0).replace("R$", "").trim() : "igual"}
-                      onChange={(v) => setRows(rows.map((x, j) => (j === i ? { ...x, amount: v } : x)))}
-                    />
-                  </div>
-                  {rows.length > 1 && (
-                    <button type="button" aria-label="Remover pessoa" className="p-1 text-muted" onClick={() => setRows(rows.filter((_, j) => j !== i))}>
-                      <X size={18} />
-                    </button>
-                  )}
-                </div>
-              ))}
-              <div className="flex items-center justify-between pt-1">
-                <button type="button" className="inline-flex items-center gap-1 text-sm font-semibold text-accent" onClick={() => setRows([...rows, { person: "", amount: null }])}>
-                  <UserPlus size={16} /> Pessoa
-                </button>
-                <span className={split.mine < 0 ? "text-sm font-semibold text-danger" : "text-sm text-muted"}>
-                  Sua parte: <b className="num text-text">{formatBRL(split.mine)}</b>
-                </span>
-              </div>
-              <p className="text-xs text-muted">Deixe o valor vazio para dividir igualmente.</p>
-            </div>
-          )}
-        </div>
-      )}
+      {!item && <SplitFields on={splitOn} onToggle={setSplitOn} rows={rows} onRows={setRows} total={amount} split={split} />}
       {item && item.shared_cents > 0 && (
         <p className="rounded-xl bg-surface-2 p-3 text-sm text-muted">
           Este gasto foi dividido: <b className="num text-text">{formatBRL(item.shared_cents)}</b> estão em Devedores.

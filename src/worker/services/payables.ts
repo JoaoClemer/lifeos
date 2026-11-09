@@ -2,10 +2,11 @@
 // com debtor_user_id = você); aqui você só vê o necessário e pode marcar "paguei" ou contestar.
 // Elas contam nos seus gastos no mês do item (o mesmo mês em que entram na fatura de quem passou no cartão).
 import { z } from "zod";
-import type { Payable } from "../../shared/connections";
+import { type NetDebt, netDebts, type Payable } from "../../shared/connections";
 import { isDue } from "../../shared/receivables";
 import { DATE_RE } from "../../shared/month";
 import { type Ctx, UserError } from "../lib";
+import { listReceivables, syncRecurringSplits } from "./receivables";
 
 const COLS = `r.id, r.user_id AS creditor_id, u.name AS creditor_name, r.description, r.amount_cents, r.date, r.month,
   r.installment_no, r.installment_total, r.received_at, r.paid_claimed_at, r.disputed_at, r.dispute_note`;
@@ -22,6 +23,7 @@ export interface PayableFilter {
 }
 
 export async function listPayables(ctx: Ctx, f: PayableFilter = {}): Promise<(Payable & { due: boolean })[]> {
+  await syncRecurringSplits(ctx);
   const where = ["r.debtor_user_id = ?"];
   const args: number[] = [ctx.userId];
   const status = f.status ?? "pending";
@@ -40,11 +42,18 @@ export async function listPayables(ctx: Ctx, f: PayableFilter = {}): Promise<(Pa
 
 /** Soma do que você deve por mês (entra nos seus gastos). */
 export async function payablesByMonth(ctx: Ctx): Promise<Map<string, number>> {
+  await syncRecurringSplits(ctx);
   const rows = await ctx.db
     .prepare("SELECT month, SUM(amount_cents) AS total FROM receivables WHERE debtor_user_id = ? GROUP BY month")
     .bind(ctx.userId)
     .all<{ month: string; total: number }>();
   return new Map(rows.results.map((r) => [r.month, r.total]));
+}
+
+/** Acerto com cada pessoa conectada: o que ela te deve menos o que você deve a ela (pendente e já vencido). */
+export async function netByPerson(ctx: Ctx): Promise<Map<number, NetDebt>> {
+  const [mine, owed] = await Promise.all([listReceivables(ctx), listPayables(ctx)]);
+  return netDebts(mine, owed, ctx.month);
 }
 
 export const MarkPaidInput = z.object({

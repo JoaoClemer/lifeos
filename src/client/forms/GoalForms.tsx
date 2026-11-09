@@ -158,16 +158,24 @@ export function GoalDetail({ id, onEdit }: { id: number; onEdit: (g: Goal) => vo
       {goal.members.length > 0 && (
         <div className="space-y-2 rounded-2xl border border-border p-3">
           <p className="text-sm font-semibold">{goal.owner ? `Meta de ${goal.owner.name ?? "pessoa conectada"}, em conjunto` : "Em conjunto"}</p>
-          <ul className="space-y-1 text-sm">
+          <ul className="space-y-1.5 text-sm">
             {goal.members.map((m) => (
-              <li key={m.id} className="flex justify-between gap-3">
-                <span>{m.name ?? "Pessoa"}</span>
-                <span className="num text-muted">
-                  {formatBRL(m.month_contrib_cents)} no mês{m.monthly_cents ? ` de ${formatBRL(m.monthly_cents)}` : ""}
+              <li key={m.id} className="flex items-baseline justify-between gap-3">
+                <span className="min-w-0">
+                  <span className="block truncate">{m.name ?? "Pessoa"}</span>
+                  <span className="num block text-xs text-muted">
+                    {formatBRL(m.month_contrib_cents)} no mês{m.monthly_cents ? ` de ${formatBRL(m.monthly_cents)}` : ""}
+                  </span>
                 </span>
+                <span className="num shrink-0 font-semibold">{formatBRL(m.total_contrib_cents)}</span>
               </li>
             ))}
+            <li className="flex justify-between gap-3 border-t border-border pt-1.5 text-muted">
+              <span>Saldo inicial, rendimentos e ajustes</span>
+              <span className="num shrink-0">{formatBRL(goal.balance_cents - goal.members.reduce((s, m) => s + m.total_contrib_cents, 0))}</span>
+            </li>
           </ul>
+          <p className="text-xs text-muted">À direita, quanto cada pessoa já aportou (aportes menos resgates).</p>
           {goal.owner && (
             <div className="space-y-2 border-t border-border pt-2">
               <Field label="Seu aporte mensal">

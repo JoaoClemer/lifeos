@@ -1,21 +1,34 @@
 import { AlertTriangle, Check, ChevronDown, Handshake, Undo2 } from "lucide-react";
 import { useState } from "react";
-import { debtStatus, type Payable } from "../../shared/connections";
+import { debtStatus, netDebts, type Payable } from "../../shared/connections";
 import { formatBRL } from "../../shared/money";
-import { formatDateBR, monthLabel } from "../../shared/month";
+import { formatDateBR, monthLabel, monthTitle } from "../../shared/month";
+import type { Receivable } from "../../shared/types";
 import { api } from "../api";
-import { useData, useMutation } from "../state";
+import { useApp, useData, useMutation } from "../state";
 import { Avatar, Badge, Button, Card, cx, Empty, Money, Row, Segmented } from "../ui";
 import { ListSkeleton } from "./ExpensesView";
+import { NetLine } from "./NetLine";
 
 type Item = Payable & { due: boolean };
 const sum = (items: Item[]) => items.reduce((s, r) => s + r.amount_cents, 0);
+
+/** Itens por mês de referência (o mês da fatura de quem passou no cartão), do mais recente para o mais antigo. */
+function byMonth(items: Item[]): [string, Item[]][] {
+  const months = new Map<string, Item[]>();
+  for (const p of items) months.set(p.month, [...(months.get(p.month) ?? []), p]);
+  return [...months.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+}
 
 /** "Devo": o que você deve a pessoas conectadas. Você marca "paguei" e a outra pessoa confirma. */
 export function PayablesView() {
   const [tab, setTab] = useState<"pending" | "received">("pending");
   const list = useData<Item[]>(`/api/payables?status=${tab}`).data;
   const { run, busy } = useMutation();
+  const { currentMonth } = useApp();
+  // Acerto: o que cada pessoa também te deve (dos seus devedores ligados à conta dela)
+  const mine = useData<Receivable[]>("/api/receivables?status=pending").data ?? [];
+  const net = netDebts(mine, tab === "pending" ? (list ?? []) : [], currentMonth);
 
   const groups = new Map<number, { name: string; due: Item[]; future: Item[] }>();
   for (const p of list ?? []) {
@@ -90,7 +103,7 @@ export function PayablesView() {
     <div className="space-y-5">
       <div className="px-1">
         <p className={cx("num text-2xl font-bold", tab === "pending" && open > 0 && "text-danger")}>{formatBRL(tab === "pending" ? open : sum(list ?? []))}</p>
-        <p className="text-sm text-muted">{tab === "pending" ? "em aberto (conta nos seus gastos do mês da fatura)" : "já pago (histórico)"}</p>
+        <p className="text-sm text-muted">{tab === "pending" ? "em aberto (cada valor conta nos seus gastos do mês indicado)" : "já pago (histórico)"}</p>
       </div>
       <Segmented
         options={[
@@ -135,7 +148,16 @@ export function PayablesView() {
                   )}
                 </div>
               </div>
-              <div className="divide-y divide-border">{g.due.map(row)}</div>
+              {tab === "pending" && <NetLine name={g.name} net={net.get(id)} />}
+              {byMonth(g.due).map(([m, items]) => (
+                <div key={m}>
+                  <div className="flex items-center justify-between border-b border-border bg-surface-2/50 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
+                    <span>{monthTitle(m)}</span>
+                    <span className="num">{formatBRL(sum(items))}</span>
+                  </div>
+                  <div className="divide-y divide-border">{items.map(row)}</div>
+                </div>
+              ))}
               {g.future.length > 0 && <Future items={g.future} renderRow={row} bordered={g.due.length > 0} />}
             </Card>
           );

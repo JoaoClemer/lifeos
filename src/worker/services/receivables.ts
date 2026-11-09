@@ -31,7 +31,7 @@ export const ReceivablePatch = ReceivableFields.partial().extend({
 });
 
 const COLS =
-  "id, person, description, amount_cents, date, month, account_id, expense_id, received_at, installment_group, installment_no, installment_total, debtor_user_id, paid_claimed_at, disputed_at, dispute_note";
+  "id, person, description, amount_cents, date, month, account_id, expense_id, installment_id, recurring_id, received_at, installment_group, installment_no, installment_total, debtor_user_id, paid_claimed_at, disputed_at, dispute_note";
 
 /**
  * Conta de quem deve, se o nome estiver ligado a uma pessoa conectada (person_links).
@@ -57,6 +57,66 @@ export async function spellingsOf(ctx: Ctx, key: string): Promise<string[]> {
 
 export { isDue };
 
+const synced = new WeakMap<Ctx, Promise<void>>();
+
+/**
+ * Fixos divididos: a parte de cada pessoa vira um devedor por mês. Gera os meses que faltam até o atual (uma vez por
+ * requisição, antes de qualquer leitura de devedores), dos seus fixos e dos de quem ligou um nome à sua conta
+ * (para o seu "Devo" estar em dia mesmo que a outra pessoa não tenha aberto o app).
+ */
+export function syncRecurringSplits(ctx: Ctx, force = false): Promise<void> {
+  let run = force ? undefined : synced.get(ctx);
+  if (!run) synced.set(ctx, (run = generateRecurringSplits(ctx)));
+  return run;
+}
+
+async function generateRecurringSplits(ctx: Ctx): Promise<void> {
+  const pending = (
+    await ctx.db
+      .prepare(
+        `SELECT s.id, s.user_id, s.person, s.amount_cents, s.generated_through, r.id AS recurring_id, r.description, r.account_id, r.day, r.start_month, r.end_month
+         FROM recurring_splits s JOIN recurring r ON r.id = s.recurring_id AND r.user_id = s.user_id
+         WHERE (s.user_id = ?1 OR s.user_id IN (SELECT pl.user_id FROM person_links pl WHERE pl.linked_user_id = ?1))
+           AND s.generated_through < MIN(?2, COALESCE(r.end_month, ?2))`,
+      )
+      .bind(ctx.userId, ctx.month)
+      .all<{
+        id: number;
+        user_id: number;
+        person: string;
+        amount_cents: number;
+        generated_through: string;
+        recurring_id: number;
+        description: string;
+        account_id: number | null;
+        day: number | null;
+        start_month: string;
+        end_month: string | null;
+      }>()
+  ).results;
+  if (!pending.length) return;
+  const stmts: D1PreparedStatement[] = [];
+  for (const s of pending) {
+    const debtor = await debtorFor({ ...ctx, userId: s.user_id }, s.person);
+    const last = s.end_month && s.end_month < ctx.month ? s.end_month : ctx.month;
+    const next = addMonths(s.generated_through, 1);
+    for (let m = next > s.start_month ? next : s.start_month; m <= last; m = addMonths(m, 1)) {
+      const [y, mo] = m.split("-").map(Number);
+      const day = Math.min(s.day ?? 1, new Date(Date.UTC(y, mo, 0)).getUTCDate());
+      stmts.push(
+        ctx.db
+          .prepare(
+            `INSERT OR IGNORE INTO receivables (user_id, person, description, amount_cents, date, month, account_id, debtor_user_id, recurring_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .bind(s.user_id, s.person, s.description, s.amount_cents, `${m}-${String(day).padStart(2, "0")}`, m, s.account_id, debtor, s.recurring_id),
+      );
+    }
+    stmts.push(ctx.db.prepare("UPDATE recurring_splits SET generated_through = ? WHERE id = ? AND user_id = ?").bind(last, s.id, s.user_id));
+  }
+  await ctx.db.batch(stmts);
+}
+
 export interface ReceivableFilter {
   status?: "pending" | "received" | "all";
   person?: string;
@@ -64,6 +124,7 @@ export interface ReceivableFilter {
 }
 
 export async function listReceivables(ctx: Ctx, f: ReceivableFilter = {}): Promise<Receivable[]> {
+  await syncRecurringSplits(ctx);
   const where: string[] = ["user_id = ?"];
   const args: (string | number)[] = [ctx.userId];
   const status = f.status ?? "pending";
@@ -92,8 +153,9 @@ export async function getReceivable(ctx: Ctx, id: number): Promise<Receivable> {
 /**
  * Registra um devedor. Com `installments` > 1, cria uma linha por parcela (uma por mês),
  * todas ligadas pelo mesmo installment_group. Retorna as linhas criadas (1 se à vista).
+ * `installmentId`: a parte da pessoa num parcelado seu que foi dividido.
  */
-export async function createReceivable(ctx: Ctx, input: z.input<typeof ReceivableInput>): Promise<Receivable[]> {
+export async function createReceivable(ctx: Ctx, input: z.input<typeof ReceivableInput>, installmentId: number | null = null): Promise<Receivable[]> {
   const r = ReceivableInput.parse(input);
   const date = r.date ?? ctx.today;
   const account = r.account_id ? await mustGet<Account>(ctx, "accounts", r.account_id, "Conta") : null;
@@ -104,9 +166,9 @@ export async function createReceivable(ctx: Ctx, input: z.input<typeof Receivabl
   if (n === 1) {
     const row = await ctx.db
       .prepare(
-        `INSERT INTO receivables (user_id, person, description, amount_cents, date, month, account_id, debtor_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+        `INSERT INTO receivables (user_id, person, description, amount_cents, date, month, account_id, debtor_user_id, installment_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
       )
-      .bind(ctx.userId, person, r.description, r.amount_cents ?? r.total_cents!, date, r.month ?? referenceMonth(date, account), account?.id ?? null, debtor)
+      .bind(ctx.userId, person, r.description, r.amount_cents ?? r.total_cents!, date, r.month ?? referenceMonth(date, account), account?.id ?? null, debtor, installmentId)
       .first<{ id: number }>();
     return [await getReceivable(ctx, row!.id)];
   }
@@ -129,10 +191,10 @@ export async function createReceivable(ctx: Ctx, input: z.input<typeof Receivabl
     stmts.push(
       ctx.db
         .prepare(
-          `INSERT INTO receivables (user_id, person, description, amount_cents, date, month, account_id, installment_group, installment_no, installment_total, debtor_user_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO receivables (user_id, person, description, amount_cents, date, month, account_id, installment_group, installment_no, installment_total, debtor_user_id, installment_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
-        .bind(ctx.userId, person, r.description, amountOf(k), date, addMonths(firstMonth, k - 1), account?.id ?? null, group, k, n, debtor),
+        .bind(ctx.userId, person, r.description, amountOf(k), date, addMonths(firstMonth, k - 1), account?.id ?? null, group, k, n, debtor, installmentId),
     );
   }
   await ctx.db.batch(stmts);

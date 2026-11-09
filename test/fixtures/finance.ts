@@ -18,6 +18,7 @@ const TABLES = [
   "expenses",
   "incomes",
   "recurring_months",
+  "recurring_splits",
   "recurring",
   "installments",
   "user_month_balances",

@@ -6,6 +6,7 @@ export const OWNED_TABLES = [
   "accounts",
   "recurring",
   "recurring_months",
+  "recurring_splits",
   "installments",
   "expenses",
   "receivables",

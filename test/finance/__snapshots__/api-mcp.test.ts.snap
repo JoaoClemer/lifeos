@@ -99,7 +99,7 @@ exports[`MCP > as ferramentas financeiras (nomes, descrições e parâmetros) n�
     "title": "Lançar despesa",
   },
   {
-    "description": "Cadastra uma compra parcelada. Informe o valor da parcela OU o valor total. Para algo que você já está pagando, informe \`parcela_atual\` (ex.: está na 3ª de 10 este mês).",
+    "description": "Cadastra uma compra parcelada. Informe o valor da parcela OU o valor total. Para algo que você já está pagando, informe \`parcela_atual\` (ex.: está na 3ª de 10 este mês). Se dividiu a compra com alguém, informe o valor da compra toda e use \`dividir_com\`: a parte dos outros vira devedor parcelado e o parcelado fica só com a sua parte.",
     "inputSchema": {
       "properties": {
         "conta": {
@@ -114,6 +114,27 @@ exports[`MCP > as ferramentas financeiras (nomes, descrições e parâmetros) n�
         "descricao": {
           "minLength": 1,
           "type": "string",
+        },
+        "dividir_com": {
+          "description": "Pessoas que vão te pagar uma parte. \`valor\` na mesma base informada: da parcela (com valor_parcela) ou do total (com valor_total)",
+          "items": {
+            "properties": {
+              "pessoa": {
+                "minLength": 1,
+                "type": "string",
+              },
+              "valor": {
+                "description": "Parte da pessoa em reais. Se omitido, divide igualmente entre você e as pessoas sem valor.",
+                "exclusiveMinimum": 0,
+                "type": "number",
+              },
+            },
+            "required": [
+              "pessoa",
+            ],
+            "type": "object",
+          },
+          "type": "array",
         },
         "parcela_atual": {
           "description": "Qual parcela cai no mês atual, para compras já em andamento",
@@ -148,7 +169,7 @@ exports[`MCP > as ferramentas financeiras (nomes, descrições e parâmetros) n�
     "title": "Lançar compra parcelada",
   },
   {
-    "description": "Cadastra um gasto que se repete todo mês (assinatura, conta, etc.). Use \`orcamento: true\` para um valor reservado do qual você vai descontando gastos ao longo do mês (ex.: R$ 500 de almoço).",
+    "description": "Cadastra um gasto que se repete todo mês (assinatura, conta, etc.). Use \`orcamento: true\` para um valor reservado do qual você vai descontando gastos ao longo do mês (ex.: R$ 500 de almoço). Se divide a conta com alguém (ex.: assinatura), informe o valor total e use \`dividir_com\`: todo mês a parte dos outros vira devedor e o fixo fica só com a sua parte.",
     "inputSchema": {
       "properties": {
         "conta": {
@@ -164,6 +185,27 @@ exports[`MCP > as ferramentas financeiras (nomes, descrições e parâmetros) n�
           "maximum": 31,
           "minimum": 1,
           "type": "integer",
+        },
+        "dividir_com": {
+          "description": "Pessoas que te pagam uma parte todo mês (não se aplica a orçamentos)",
+          "items": {
+            "properties": {
+              "pessoa": {
+                "minLength": 1,
+                "type": "string",
+              },
+              "valor": {
+                "description": "Parte da pessoa em reais. Se omitido, divide igualmente entre você e as pessoas sem valor.",
+                "exclusiveMinimum": 0,
+                "type": "number",
+              },
+            },
+            "required": [
+              "pessoa",
+            ],
+            "type": "object",
+          },
+          "type": "array",
         },
         "mes_inicio": {
           "description": "Mês no formato YYYY-MM. Padrão: mês atual.",
@@ -318,7 +360,7 @@ exports[`MCP > as ferramentas financeiras (nomes, descrições e parâmetros) n�
     "annotations": {
       "readOnlyHint": true,
     },
-    "description": "Lista quem te deve e quanto (pendentes por padrão). Parcelas futuras de devedores parcelados aparecem separadas.",
+    "description": "Lista quem te deve e quanto (pendentes por padrão). Parcelas futuras de devedores parcelados aparecem separadas. Se você também deve a uma dessas pessoas (conectada), mostra o acerto: um valor menos o outro.",
     "inputSchema": {
       "properties": {
         "incluir_recebidos": {
@@ -544,7 +586,7 @@ exports[`MCP > as ferramentas financeiras (nomes, descrições e parâmetros) n�
     "annotations": {
       "readOnlyHint": true,
     },
-    "description": "Lista metas/investimentos com saldo, alvo, aporte mensal, se o aporte do mês foi feito e a previsão para atingir a meta.",
+    "description": "Lista metas/investimentos com saldo, alvo, aporte mensal, se o aporte do mês foi feito e a previsão para atingir a meta. Em metas em conjunto, mostra quanto cada pessoa já aportou (sem rendimentos).",
     "inputSchema": {
       "properties": {
         "mes": {

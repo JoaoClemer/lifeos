@@ -49,6 +49,14 @@ export interface Installment {
   current: number;
   /** Quanto falta pagar depois do mês consultado. */
   remaining_cents: number;
+  /** Parte de outras pessoas em cada parcela (compra dividida: está em Devedores). */
+  shared_cents: number;
+}
+
+/** Parte de uma pessoa num gasto dividido. */
+export interface Split {
+  person: string;
+  amount_cents: number;
 }
 
 export interface Recurring {
@@ -66,6 +74,10 @@ export interface Recurring {
   paid: boolean;
   /** Para orçamentos: quanto já foi lançado no mês. */
   spent_cents: number;
+  /** Fixo dividido: parte de cada pessoa por mês (todo mês vira um devedor). `amount_cents` é só a sua parte. */
+  splits: Split[];
+  /** Soma das partes das outras pessoas por mês. */
+  shared_cents: number;
 }
 
 export interface Receivable {
@@ -77,6 +89,9 @@ export interface Receivable {
   month: string;
   account_id: number | null;
   expense_id: number | null;
+  /** Parcelado ou fixo seu que foi dividido com a pessoa (null se não veio de um). */
+  installment_id: number | null;
+  recurring_id: number | null;
   received_at: string | null;
   /** Devedor parcelado: id do parcelamento, nº desta parcela e total de parcelas (null se à vista). */
   installment_group: string | null;
@@ -126,6 +141,8 @@ export interface GoalMember {
   monthly_cents: number | null;
   /** Aportes líquidos desta pessoa no mês consultado. */
   month_contrib_cents: number;
+  /** Tudo o que esta pessoa já aportou (aportes - resgates), sem rendimentos nem ajustes de saldo. */
+  total_contrib_cents: number;
 }
 
 export interface Goal {
